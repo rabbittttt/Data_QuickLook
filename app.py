@@ -10,10 +10,11 @@ import streamlit as st
 from analysis_engine import apply_filters, dimension_candidates, interpret_question, numeric_candidates, summarize
 from warehouse import Warehouse
 from comparison import render_comparison
+from source_paths import source_config
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_DATA = ROOT / "input_file"
+DEFAULT_DATA = Path(source_config(ROOT)["folder"])
 DATABASE = ROOT / "output_file" / "warehouse.db"
 
 st.set_page_config(page_title="经营数据查询助手", page_icon=":material/bar_chart:", layout="wide")

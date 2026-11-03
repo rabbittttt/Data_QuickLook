@@ -19,6 +19,7 @@ import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
 from warehouse import Warehouse
+from source_paths import source_config
 
 ROOT = Path(__file__).resolve().parent
 STORE = Warehouse(ROOT / 'output_file' / 'warehouse.db')
@@ -30,7 +31,7 @@ MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 
 def config():
-    return json.loads(CONFIG.read_text(encoding='utf-8')) if CONFIG.exists() else {'folder': str(ROOT / 'input_file'), 'auto': True}
+    return source_config(ROOT, CONFIG)
 
 
 def claim_sync():
