@@ -18,7 +18,7 @@ SOURCE_SETTINGS = source_config(ROOT)
 DEFAULT_SOURCES = SOURCE_SETTINGS.get('folders', [SOURCE_SETTINGS['folder']])
 DATABASE = ROOT / "output_file" / "warehouse.db"
 
-st.set_page_config(page_title="数据速查 · Data QuickLook", page_icon=":material/bar_chart:", layout="wide")
+st.set_page_config(page_title="数据速查", page_icon=":material/bar_chart:", layout="wide")
 
 st.markdown(
     """
