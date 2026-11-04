@@ -8,12 +8,17 @@
 
 ## 安装与启动
 
-在项目目录安装依赖，然后启动本地服务：
+新电脑先安装 Python 3.10 或更新版本，并将其加入 PATH。在本项目目录创建独立环境并安装依赖：
 
 ```powershell
-python -m pip install -r requirements.txt
-python server.py
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe server.py
 ```
+
+换电脑后应重新创建 `.venv`，不要直接复制旧电脑的虚拟环境。代码与业务文件分别迁移，保留项目与共享目录的相对位置。
+
+`启动数据速查.cmd` 优先使用本项目 `.venv\Scripts\python.exe`，没有项目环境时使用 PATH 中的 Python，并在启动前检查版本和依赖。可用 `DATA_QUICKLOOK_PYTHON` 指定其他解释器文件；相对路径按本项目目录解析。启动窗口会显示所选 Python；显式路径无效、项目 `.venv` 不完整或所选环境缺依赖时会提示并停止，不自动安装或换用其他环境。
 
 也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:8765)；命令行使用 `python server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:8765`。
 
