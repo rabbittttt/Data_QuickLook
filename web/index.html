@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>数见 · 经营数据工作台</title>
+<title>Excel 数据查询与图表分析</title>
 <link rel="icon" type="image/svg+xml" sizes="any" href="favicon.svg">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="responsive.css">
@@ -22,7 +22,7 @@
 </head>
 <body>
 <a class="skip-link" href="#main" onclick="event.preventDefault();document.getElementById('main').focus();">跳到主要内容</a>
-<header class="workspace-header"><a class="brand" href="#home"><img class="brandmark" src="favicon.svg" width="34" height="34" alt=""><span>数见<small>DATA WORKSPACE</small></span></a><nav id="nav" aria-label="主导航"><button data-page="home"><span>工作台</span></button><button data-page="explore"><span>数据管理</span><em id="tableCount"></em></button><button data-page="compare"><span>图表展示</span><em id="basketCount">0</em></button><button data-page="saved"><span>收藏的分析</span></button></nav><div class="workspace-tools"><span class="workspace-label">本地工作空间</span><span class="storage-note"><span class="dot"></span> 数据保存在本机</span><button id="sourceButton">管理数据源 ↗</button></div></header>
+<header class="workspace-header"><a class="brand" href="#home" aria-label="Excel 数据分析，返回数据概览"><img class="brandmark" src="favicon.svg" width="34" height="34" alt=""><span>Excel 数据分析<small>QUERY &amp; CHARTS</small></span></a><nav id="nav" aria-label="主导航"><button data-page="home"><span>数据概览</span></button><button data-page="explore"><span>数据管理</span><em id="tableCount"></em></button><button data-page="compare"><span>图表展示</span><em id="basketCount">0</em></button><button data-page="saved"><span>收藏的分析</span></button></nav><div class="workspace-tools"><span class="workspace-label">本地工作空间</span><span class="storage-note"><span class="dot"></span> 数据保存在本机</span><button id="sourceButton">管理数据源 ↗</button></div></header>
 <div class="app"><header class="topbar"><div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索全部文件、参数或数据内容…" aria-label="全局搜索"><kbd>/</kbd></div><div class="top-actions"><span id="syncStatus" role="status">正在连接数据仓库</span><button id="importButton" class="primary" aria-haspopup="dialog" aria-controls="importDialog">导入<span class="action-detail">文件</span></button><button id="syncButton" aria-label="同步数据">↻ 同步<span class="action-detail">数据</span></button></div></header><main id="main" tabindex="-1"></main></div>
 <dialog id="dialog"><div id="dialogBody"></div><form method="dialog"><button class="dialog-close" aria-label="关闭对话框">×</button></form></dialog><div id="toast" role="status" aria-live="polite"></div>
 <dialog id="importDialog" aria-labelledby="importTitle">
@@ -41,7 +41,7 @@
   <p id="importOverwriteName" class="import-conflict-name"></p>
   <p id="importOverwriteFolder" class="import-destination"></p>
   <p id="importOverwriteSizes" class="meta"></p>
-  <p id="importOverwriteNote">新文件将替换上述目录中的原文件，原内容无法在工作台内撤销。取消会跳过此文件，继续导入其他文件。</p>
+  <p id="importOverwriteNote">新文件将替换上述目录中的原文件，原内容无法在本工具内撤销。取消会跳过此文件，继续导入其他文件。</p>
   <p id="importOverwriteChanged" class="meta" hidden>文件在上次确认后已发生变化，请核对后再次确认。</p>
   <form method="dialog" class="import-actions"><button value="skip" autofocus>取消，保留原文件</button><button value="replace" class="import-replace">确认覆盖</button></form>
 </dialog>

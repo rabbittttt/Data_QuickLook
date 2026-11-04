@@ -456,6 +456,7 @@ def watch():
 
 
 WORKBENCH_URL = 'http://127.0.0.1:8765'
+APP_TITLE = 'Excel 数据查询与图表分析'
 
 
 class WorkbenchHTTPServer(ThreadingHTTPServer):
@@ -481,8 +482,9 @@ def workbench_running():
     try:
         connection.request('GET', '/')
         response = connection.getresponse()
-        title = '<title>数见 · 经营数据工作台</title>'.encode('utf-8')
-        return response.status == 200 and title in response.read(16384)
+        page = response.read(16384)
+        titles = (APP_TITLE, '数见 · 经营数据工作台')
+        return response.status == 200 and any(f'<title>{title}</title>'.encode('utf-8') in page for title in titles)
     except (OSError, HTTPException):
         return False
     finally:
@@ -494,13 +496,13 @@ def run_server(open_browser=False):
         httpd = WorkbenchHTTPServer(('127.0.0.1', 8765), Handler)
     except OSError:
         if open_browser and workbench_running():
-            print('工作台已经运行，正在打开现有页面。', flush=True)
+            print('数据分析工具已经运行，正在打开现有页面。', flush=True)
             open_workbench()
             return
         raise
     with httpd:
         threading.Thread(target=watch, daemon=True).start()
-        print(f'数据速查工作台: {WORKBENCH_URL}', flush=True)
+        print(f'{APP_TITLE}: {WORKBENCH_URL}', flush=True)
         if open_browser:
             # The listening socket is ready before the browser can request the page.
             threading.Thread(target=open_workbench, daemon=True).start()
@@ -511,6 +513,6 @@ def run_server(open_browser=False):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='数见 · 经营数据工作台')
+    parser = argparse.ArgumentParser(description=APP_TITLE)
     parser.add_argument('--open-browser', action='store_true', help='服务启动后自动打开浏览器')
     run_server(open_browser=parser.parse_args().open_browser)

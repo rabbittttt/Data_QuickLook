@@ -139,7 +139,7 @@ button.link{min-height:32px;padding:4px 6px}
 
 /* One top navigation row gives the data canvas the full viewport width. */
 .workspace-header{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:24px;height:var(--workspace-header-height);padding:0 16px;background:var(--nav);color:#d6e3dc}
-.workspace-header .brand{flex-shrink:0;padding:0;white-space:nowrap}
+.workspace-header .brand{flex-shrink:0;padding:0;white-space:nowrap;letter-spacing:0}
 #nav{display:flex;align-items:center;flex-wrap:nowrap;gap:4px;margin:0;overflow:visible}
 #nav button{align-items:center;justify-content:center;white-space:nowrap}
 .workspace-tools{display:flex;align-items:center;gap:16px;margin-left:auto;white-space:nowrap;font-size:11px;color:#aac1b2}
