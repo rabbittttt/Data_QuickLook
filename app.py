@@ -14,7 +14,8 @@ from source_paths import source_config
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_DATA = Path(source_config(ROOT)["folder"])
+SOURCE_SETTINGS = source_config(ROOT)
+DEFAULT_SOURCES = SOURCE_SETTINGS.get('folders', [SOURCE_SETTINGS['folder']])
 DATABASE = ROOT / "output_file" / "warehouse.db"
 
 st.set_page_config(page_title="经营数据查询助手", page_icon=":material/bar_chart:", layout="wide")
@@ -70,12 +71,13 @@ def render_chart(data: pd.DataFrame, dimension: str, metric: str, chart_type: st
 store = warehouse()
 with st.sidebar:
     st.subheader("数据源")
-    folder = st.text_input("Excel 文件夹", value=str(DEFAULT_DATA), help="自动扫描该目录及所有子目录中的 .xlsx 和 .xlsm 文件")
+    source_text = st.text_area("Excel 数据源（每行一个目录）", value='\n'.join(DEFAULT_SOURCES), help="同时扫描多个目录及其子目录中的 .xlsx 和 .xlsm；相对路径按本项目目录解析")
+    folders = [str((ROOT / Path(p.strip()).expanduser()).resolve()) for p in source_text.splitlines() if p.strip()]
     st.caption('递归读取新增及变更文件；读取失败保留上次数据。移走的文件仍保留历史数据。')
     if st.button("同步新增和变更文件", type="primary", width="stretch"):
         with st.spinner("正在识别 Excel 中的数据表…"):
             try:
-                result = store.sync(folder)
+                result = store.sync(folders)
                 st.success(f"已识别 {result.files} 个文件、{result.tables} 张表、{result.rows:,} 行数据")
                 if result.errors:
                     st.warning("部分文件未能读取：\n" + "\n".join(result.errors))
@@ -88,7 +90,7 @@ if auto_sync:
     def refresh_sources():
         try:
             before = store.catalog().to_json()
-            result = store.sync(folder)
+            result = store.sync(folders)
             if result.errors:
                 st.warning('同步未完成：' + '\n'.join(result.errors))
             if before != store.catalog().to_json():

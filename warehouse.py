@@ -5,8 +5,10 @@ from datetime import datetime
 from pathlib import Path
 import hashlib
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
+from typing import Iterable
 
 import pandas as pd
 
@@ -19,6 +21,44 @@ class ScanResult:
     tables: int
     rows: int
     errors: list[str]
+
+
+def scan_source_files(folder: str | Path | Iterable[str | Path]) -> tuple[list[Path], list[str]]:
+    """Scan several roots once; an unavailable root does not hide healthy ones."""
+    single_source = isinstance(folder, (str, Path))
+    requested = [folder] if single_source else list(folder)
+    roots, errors = [], []
+    root_keys = set()
+    for value in requested:
+        try:
+            root = Path(value).expanduser().resolve()
+            key = os.path.normcase(str(root))
+            if key not in root_keys:
+                roots.append(root)
+                root_keys.add(key)
+        except (OSError, ValueError) as exc:
+            if single_source:
+                raise
+            errors.append(f'{value}: {exc}')
+    unique = {}
+    for root in roots:
+        try:
+            candidates = scan_excel_files(root)
+        except (OSError, ValueError) as exc:
+            if single_source:
+                raise
+            errors.append(f'{root}: {exc}')
+            continue
+        for candidate in candidates:
+            try:
+                path = candidate.resolve()
+                # Keep synchronization and original-file browsing within the
+                # same configured roots, including when a file is a symlink.
+                if any(path.is_relative_to(base) for base in roots):
+                    unique.setdefault(os.path.normcase(str(path)), path)
+            except OSError as exc:
+                errors.append(f'{candidate}: {exc}')
+    return sorted(unique.values(), key=lambda path: os.path.normcase(str(path))), errors
 
 
 class Warehouse:
@@ -65,12 +105,11 @@ class Warehouse:
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
         return digest, f"data_{digest}"
 
-    def rebuild(self, folder: str | Path) -> ScanResult:
+    def rebuild(self, folder: str | Path | Iterable[str | Path]) -> ScanResult:
         return self.sync(folder, force=True)
 
-    def sync(self, folder: str | Path, force: bool = False) -> ScanResult:
-        files = scan_excel_files(folder)
-        errors: list[str] = []
+    def sync(self, folder: str | Path | Iterable[str | Path], force: bool = False) -> ScanResult:
+        files, errors = scan_source_files(folder)
         for file_path in files:
             try:
                 stat = file_path.stat()

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from source_paths import default_source_directory, source_config, portable_source_config
+from source_paths import default_source_directory, source_config, portable_source_config, source_directories
 
 
 class SourcePathTests(unittest.TestCase):
@@ -26,11 +26,42 @@ class SourcePathTests(unittest.TestCase):
             "folder": str(self.root / "input_file"), "auto": True,
         })
 
-    def test_shared_root_selects_only_order_summary(self):
+    def test_shared_root_keeps_order_summary_as_default_upload(self):
         shared = self.parent / "共享数据"
         for category in ("原始销量", "订单汇总", "车型信息"):
             (shared / category).mkdir(parents=True)
         self.assertEqual(default_source_directory(self.root), shared / "订单汇总")
+
+    def test_shared_defaults_include_all_categories_and_local_input(self):
+        shared = self.parent / '共享数据'
+        shared.mkdir()
+        settings = source_config(self.root)
+        self.assertEqual(settings['folder'], str(shared / '订单汇总'))
+        self.assertEqual(set(source_directories(settings)), {
+            (shared / name).resolve() for name in ('原始销量', '订单汇总', '车型信息', 'SOP计划')
+        } | {(self.root / 'input_file').resolve()})
+        self.assertFalse((shared / '原始销量').exists(), 'resolving sources never creates shared directories')
+
+    def test_multi_source_settings_are_portable_and_keep_upload_destination(self):
+        shared = self.parent / '共享数据' / 'SOP计划'
+        local = self.root / 'input_file'
+        saved = portable_source_config(self.root, local, False, [shared, local, local])
+        self.assertEqual(saved, {'folder': 'input_file', 'folders': ['../共享数据/SOP计划', 'input_file'], 'auto': False})
+        moved = self.parent / 'relocated' / '数据速查'
+        config_file = moved / 'output_file' / 'workspace.json'
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps(saved), encoding='utf-8')
+        settings = source_config(moved)
+        self.assertEqual(source_directories(settings), [(moved.parent / '共享数据' / 'SOP计划').resolve(), (moved / 'input_file').resolve()])
+        self.assertEqual(settings['folder'], str((moved / 'input_file').resolve()))
+
+    def test_upload_destination_must_belong_to_configured_sources(self):
+        with self.assertRaises(ValueError):
+            portable_source_config(self.root, self.parent / 'outside', folders=[self.root / 'input_file'])
+        with self.assertRaises(ValueError):
+            source_directories({'folders': []})
+        with self.assertRaises(ValueError):
+            source_directories({'folders': ['']})
 
     def test_missing_category_does_not_fall_back_to_private_input(self):
         (self.root / "input_file").mkdir()

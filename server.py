@@ -18,8 +18,8 @@ import tempfile
 import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
-from warehouse import Warehouse
-from source_paths import source_config, resolve_source_path, portable_source_config
+from warehouse import Warehouse, scan_source_files
+from source_paths import source_config, resolve_source_path, portable_source_config, source_directories
 
 ROOT = Path(__file__).resolve().parent
 STORE = Warehouse(ROOT / 'output_file' / 'warehouse.db')
@@ -47,7 +47,9 @@ def sync_worker():
     while True:
         try:
             with LOCK:
-                result = STORE.sync(config()['folder'])
+                settings = config()
+                sources = source_directories(settings)
+                result = STORE.sync(sources if 'folders' in settings else settings['folder'])
             STATUS.update(asdict(result), last_sync=time.strftime('%Y-%m-%d %H:%M:%S'))
         except Exception as exc:
             STATUS['errors'] = [str(exc)]
@@ -94,9 +96,9 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
         raise ValueError('仅支持 .xlsx 和 .xlsm；旧版 .xls 请先另存为 .xlsx')
     if size <= 0:
         raise ValueError('文件为空或缺少文件长度')
-    folder = Path(config()['folder']).resolve()
-    if not expected_folder or Path(expected_folder).resolve() != folder:
-        raise ValueError('数据源目录已变更，请重新打开导入窗口')
+    folder = Path(expected_folder).resolve() if expected_folder else None
+    if folder not in source_directories(config()):
+        raise ValueError('数据源目录已变更或未配置，请重新打开导入窗口')
     if folder == (ROOT / 'input_file').resolve():
         folder.mkdir(exist_ok=True)
     if not folder.is_dir():
@@ -127,7 +129,7 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
         except Exception as exc:
             raise ValueError('无法读取此 Excel，文件可能损坏或已加密，请用 Excel 打开后另存再导入') from exc
         with LOCK:
-            if Path(config()['folder']).resolve() != folder:
+            if folder not in source_directories(config()):
                 raise ValueError('上传期间数据源目录已变更，请重新打开导入窗口')
             destination = folder / name
             if destination.is_symlink() or destination.exists() and not destination.is_file():
@@ -161,12 +163,14 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
 
 def catalog():
     records = STORE.catalog().to_dict('records')
-    folder = Path(config()['folder']).resolve()
+    sources = source_directories(config())
     for row in records:
         row['fields'] = json.loads(row.pop('columns_json'))
         path = Path(row['file_path'])
-        row['relative_path'] = str(path.relative_to(folder)) if path.is_relative_to(folder) else str(path)
-        row['archived'] = not path.exists() or not path.is_relative_to(folder)
+        source = containing_source(path, sources)
+        row['relative_path'] = source_file_label(path, source, sources) if source else str(path)
+        row['source_folder'] = str(source) if source else None
+        row['archived'] = not path.exists() or source is None
         row['issues'] = []
         if any(f['name'].startswith('字段') for f in row['fields']):
             row['issues'].append('存在未命名字段，建议核对表头')
@@ -183,22 +187,35 @@ def data(dataset_id):
     return {'columns': list(frame.columns), 'rows': json.loads(frame.to_json(orient='records', date_format='iso', force_ascii=False))}
 
 
+def containing_source(path, sources):
+    return next((source for source in sorted(sources, key=lambda p: len(p.parts), reverse=True)
+                 if path.is_relative_to(source)), None)
+
+
+def source_file_label(path, source, sources):
+    relative = str(path.relative_to(source))
+    if len(sources) == 1:
+        return relative
+    label = source.name if sum(p.name.casefold() == source.name.casefold() for p in sources) == 1 else str(source)
+    return str(Path(label) / relative)
+
+
 def workbook_files():
-    folder = Path(config()['folder']).resolve()
-    return {hashlib.sha256(str(p.resolve()).encode()).hexdigest()[:24]: p.resolve()
-            for p in folder.rglob('*') if p.is_file() and p.suffix.lower() in {'.xlsx', '.xlsm'}
-            and not p.name.startswith('~$') and p.resolve().is_relative_to(folder)}
+    # Sync reports unavailable roots; browsing still lists every healthy source.
+    paths, _ = scan_source_files(source_directories(config()))
+    return {hashlib.sha256(str(path).encode()).hexdigest()[:24]: path for path in paths}
 
 
 def workbook_list():
-    folder = Path(config()['folder']).resolve()
+    sources = source_directories(config())
     files = []
     for key, path in sorted(workbook_files().items(), key=lambda item: str(item[1])):
         try:
             stat = path.stat()
-        except FileNotFoundError:
+        except OSError:
             continue
-        files.append(dict(id=key, name=str(path.relative_to(folder)), path=str(path),
+        source = containing_source(path, sources)
+        files.append(dict(id=key, name=source_file_label(path, source, sources), path=str(path), source_folder=str(source),
                           signature=f'{stat.st_mtime_ns}:{stat.st_size}'))
     return files
 
@@ -394,11 +411,20 @@ class Handler(SimpleHTTPRequestHandler):
                 request_sync()
                 return self.send_json({'started': True})
             if self.path == '/api/config':
-                folder = resolve_source_path(ROOT, payload['folder']).resolve()
-                if not folder.is_dir():
-                    raise ValueError('文件夹不存在')
+                raw_sources = payload.get('folders', [payload.get('folder', '')])
+                if not isinstance(raw_sources, list) or not raw_sources or any(not isinstance(p, str) or not p.strip() for p in raw_sources):
+                    raise ValueError('请至少填写一个数据源目录，每行一个路径')
+                sources = source_directories({'folder': raw_sources[0], 'folders': [resolve_source_path(ROOT, p.strip()) for p in raw_sources]})
+                folder = resolve_source_path(ROOT, payload.get('folder') or sources[0]).resolve()
+                if folder not in sources:
+                    raise ValueError('默认导入目录必须是已配置的数据源之一')
+                for source in sources:
+                    if not source.is_dir():
+                        raise ValueError(f'文件夹不存在：{source}')
                 with LOCK:
-                    CONFIG.write_text(json.dumps(portable_source_config(ROOT, folder, payload.get('auto', True)), ensure_ascii=False), encoding='utf-8')
+                    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+                    saved = portable_source_config(ROOT, folder, payload.get('auto', True), sources if 'folders' in payload else None)
+                    CONFIG.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8')
                 request_sync()
                 return self.send_json({'saved': True})
             if self.path == '/api/recognition':

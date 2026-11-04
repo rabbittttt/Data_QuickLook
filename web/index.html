@@ -28,9 +28,10 @@
 <dialog id="importDialog" aria-labelledby="importTitle">
   <h2 id="importTitle">导入 Excel 文件</h2>
   <p class="meta">支持多选 .xlsx、.xlsm，单个文件不超过 256 MB。同名文件会先请你确认，确认后覆盖原文件；取消则跳过该文件。</p>
-  <p class="import-destination">保存到当前数据源：<span id="importFolder">正在读取…</span></p>
+  <label class="import-target" for="importFolder">保存到<select id="importFolder" disabled><option value="">正在读取…</option></select></label>
   <label class="import-picker" for="importFiles">选择文件<input id="importFiles" type="file" accept=".xlsx,.xlsm" multiple aria-describedby="importStatus"></label>
   <ul id="importList" class="import-list" aria-label="文件导入结果"></ul>
+  <p id="importBatchFolder" class="meta" hidden></p>
   <progress id="importProgress" max="1" value="0" aria-label="文件上传进度" hidden></progress>
   <p id="importStatus" class="meta" role="status" aria-live="polite">选择文件后开始导入。</p>
   <div class="import-actions"><button id="importStart" class="primary" disabled>开始导入</button><form method="dialog"><button id="importDone">关闭</button></form></div>

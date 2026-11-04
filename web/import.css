@@ -9,6 +9,13 @@
 #importDialog .meta{line-height:1.6}
 .import-destination{font-size:12px;line-height:1.6;background:#f3f6f1;border-radius:6px;padding:8px 10px;margin:12px 0;overflow-wrap:anywhere}
 .import-destination span{display:block;color:var(--text-secondary)}
+.import-target{display:grid;gap:6px;font-size:13px;margin:12px 0}
+.import-target select,.source-settings select{min-width:0;width:100%;max-width:100%}
+#importBatchFolder{overflow-wrap:anywhere}
+.source-settings{max-width:680px;margin:auto}
+.source-settings .formgrid>.meta,.source-settings .source-warning{margin:0}
+.source-settings textarea{width:100%;min-height:100px;resize:vertical;border:1px solid var(--control-border);border-radius:6px;padding:8px 10px;font:inherit;line-height:1.6;color:var(--ink);background:white}
+.source-settings textarea:focus{outline:3px solid var(--focus);outline-offset:2px;border-color:var(--focus)}
 .import-picker{display:grid;gap:6px;font-size:13px;font-weight:600}
 #importFiles{width:100%;max-width:100%;font-size:13px;font-weight:400}
 #importFiles::file-selector-button{border:1px solid var(--control-border);border-radius:5px;background:white;color:var(--ink);padding:6px 10px;margin-right:8px;cursor:pointer}
@@ -27,4 +34,5 @@
   .top-actions{gap:6px}
   .top-actions button{padding:8px}
   #importFiles::file-selector-button{min-height:44px}
+  .source-settings textarea{font-size:16px}
 }

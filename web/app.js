@@ -17,6 +17,7 @@ async function tableData(id){
 }
 function tableById(id){return state.tables.find(t=>t.id===id);}
 function activeTables(){return state.tables.filter(t=>!t.archived);}
+function configuredSourceFolders(config){return [...new Set((config?.folders?.length?config.folders:[config?.folder]).filter(Boolean))];}
 function dispose(){state.charts.forEach(c=>c.dispose());state.charts=[];}
 function chart(element,option){if(!element)return;const instance=echarts.init(element);instance.setOption({color:colors,textStyle:{fontFamily:'Segoe UI, Microsoft YaHei'},animation:false,...option});state.charts.push(instance);return instance;}
 window.addEventListener('resize',()=>state.charts.forEach(c=>c.resize()));
@@ -32,7 +33,7 @@ function empty(title,subtitle,button=''){return `<div class="panel empty"><h2>${
 function grid(rows,columns){return `<div class="tablewrap"><table><thead><tr>${columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${columns.map(c=>`<td class="${typeof row[c]==='number'?'num':''}" title="${esc(fmt(row[c]))}">${esc(fmt(row[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
 function exportCSV(rows,columns,name){const cell=value=>'"'+String(value??'').replace(/"/g,'""').replace(/^([=+@])/,'\t$1')+'"';const text='\ufeff'+[columns,...rows.map(r=>columns.map(c=>r[c]))].map(r=>r.map(cell).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function persistBasket(){try{localStorage.setItem('shujian-basket',JSON.stringify(state.basket));}catch{}$('#basketCount').textContent=state.basket.length;}
-function catalogStamp(result){return JSON.stringify([result.tables.map(t=>[t.id,t.scanned_at]),(result.files||[]).map(f=>[f.id,f.signature])]);}
+function catalogStamp(result){return JSON.stringify([result.tables.map(t=>[t.id,t.scanned_at,t.archived]),(result.files||[]).map(f=>[f.id,f.signature]),result.config?.folders||[result.config?.folder].filter(Boolean)]);}
 function catalogStatus(result){
   state.status=result.status;
   $('#tableCount').textContent=activeTables().length;
@@ -92,7 +93,7 @@ async function render(){const token=++renderToken;dispose();const main=$('#main'
 function metricScore(name){return (/销量|订单数|小订数|大定量|净大定|锁单|交付|销售额|金额|收入|当日退订/.test(name)?10:0)+(/率|占比|比例/.test(name)?3:0)-(/累计/.test(name)?2:0);}
 function metricFields(t){return t.fields.filter(f=>f.type==='number'&&!/日期|时间|天数|年份|编码|序号|排名|小时/.test(f.name)).sort((a,b)=>metricScore(b.name)-metricScore(a.name));}
 function chooseDimension(t){return t.fields.find(f=>/^(车型|版本|区域|门店|配置|地理区域)$/.test(f.name))?.name||t.fields.find(f=>/月份|日期|年月/.test(f.name)&&f.type!=='number')?.name||t.fields.find(f=>f.type==='text')?.name||t.fields[0]?.name;}
-function recommend(){const candidates=activeTables().filter(t=>metricFields(t).length&&t.row_count>4&&t.fields.some(f=>f.type==='text'||f.type==='date'));const score=t=>metricScore(metricFields(t)[0].name)*3+(/^(车型|版本|区域|门店)$/.test(chooseDimension(t))?12:0)+(t.row_count>10?2:0)-(/说明|图表|预测/.test(t.sheet_name)?8:0)-t.issues.length*5;const seen=new Set();return candidates.sort((a,b)=>score(b)-score(a)).filter(t=>{const signature=t.file_name+'|'+t.table_name;if(seen.has(signature))return false;seen.add(signature);return true;}).slice(0,6);}
+function recommend(){const candidates=activeTables().filter(t=>metricFields(t).length&&t.row_count>4&&t.fields.some(f=>f.type==='text'||f.type==='date'));const score=t=>metricScore(metricFields(t)[0].name)*3+(/^(车型|版本|区域|门店)$/.test(chooseDimension(t))?12:0)+(t.row_count>10?2:0)-(/说明|图表|预测/.test(t.sheet_name)?8:0)-t.issues.length*5;const seen=new Set();return candidates.sort((a,b)=>score(b)-score(a)).filter(t=>{const signature=t.file_path+'|'+t.table_name;if(seen.has(signature))return false;seen.add(signature);return true;}).slice(0,6);}
 function aggregateRows(data,series){
   if(series.wide){
     if(!series.periods?.length)throw Error('请至少选择一个作为横轴的数值列');
@@ -274,6 +275,28 @@ function saved(){
   document.querySelectorAll('[data-deleteview]').forEach(b=>b.onclick=()=>{all.splice(Number(b.dataset.deleteview),1);localStorage.setItem('shujian-views',JSON.stringify(all));saved();});
 }
 async function search(token){$('#main').innerHTML=header('SEARCH / 全局搜索','搜索「'+state.query+'」','同时查找文件、表名、字段以及单元格内容。')+'<div class="loading">正在搜索全部已导入数据…</div>';const result=await api('search?q='+encodeURIComponent(state.query));if(token!==renderToken)return;const resultSummary=`找到 ${result.hits.length} 个相关数据区域${result.hits.length>60?'，当前显示前 60 个；请缩小关键词查看其他结果。':'。'}每表展示最多 3 条示例。`;$('#main').innerHTML=header('SEARCH / 全局搜索','搜索「'+state.query+'」',resultSummary)+`<p class="search-summary" role="status">${resultSummary}</p><div class="results">${result.hits.slice(0,60).map(({table:t,rows})=>`<article class="panel"><div class="sectionhead" style="margin:0 0 12px"><div><h3>${esc(t.table_name)}</h3><p>${esc(t.relative_path)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</p></div><button data-view="${t.id}">浏览数据 →</button></div><p class="meta">${t.fields.filter(f=>state.query.split(/\s+/).some(w=>f.name.includes(w))).slice(0,8).map(f=>`<button class="fieldchip" data-add="${t.id}" data-metric="${esc(f.name)}">${esc(f.name)} ＋</button>`).join('')}</p>${rows.map(row=>`<div class="resultrow"><span class="tag">行 ${esc(row._source_row)}</span> ${Object.entries(row).filter(([k])=>!k.startsWith('_')).slice(0,8).map(([k,v])=>`${esc(k)} <b>${esc(fmt(v))}</b>`).join(' · ')}</div>`).join('')}</article>`).join('')}</div>`+(result.hits.length?'':empty('没有找到匹配数据','尝试缩短关键词，或同步刚放入文件夹的新文件。'));bindTableActions();}
-function sourceDialog(){$('#dialogBody').innerHTML=`<div class="eyebrow">DATA SOURCE / 数据源</div><h2>连接持续更新的文件夹</h2><p class="meta">递归读取子目录中的 .xlsx 和 .xlsm。文件保留原样，失败时保留上次数据。</p><div class="formgrid"><label>本地文件夹路径<input id="folderPath" value="${esc(state.config.folder)}"></label><label class="inline"><input id="autoSync" type="checkbox" ${state.config.auto?'checked':''}> 服务运行期间，每 60 秒检查新增和变更文件</label><button class="primary" id="connectFolder">保存并同步</button><p class="meta">切换目录或移走文件时，已导入的数据保留为历史来源。工作台推荐只使用当前目录。</p></div>`;$('#dialog').showModal();$('#connectFolder').onclick=async()=>{try{await api('config',{folder:$('#folderPath').value,auto:$('#autoSync').checked});$('#dialog').close();toast('已开始同步文件夹');trackRequestedSync();}catch(e){toast(e.message);}};}
+function sourceDialog(){
+  const folders=configuredSourceFolders(state.config);
+  $('#dialogBody').innerHTML=`<div class="source-settings"><h2>管理数据源</h2><p class="meta">同时读取多个目录及其子目录中的 .xlsx、.xlsm。新增文件和内容更新均参与同步。</p><div class="formgrid"><label>扫描目录（每行一条）<textarea id="folderPath" rows="5" spellcheck="false" aria-describedby="sourcePathHint">${esc(folders.join('\n'))}</textarea></label><p id="sourcePathHint" class="meta">支持本机、共享目录及相对本项目的路径。数据库和缓存仍保存在本项目 output_file。</p><label>默认导入目录<select id="defaultImportFolder">${options(folders,state.config.folder||folders[0])}</select></label><label class="inline"><input id="autoSync" type="checkbox" ${state.config.auto?'checked':''}> 服务运行期间，每 60 秒检查新增和变更文件</label><p id="sourceError" class="source-warning" role="alert" hidden></p><button class="primary" id="connectFolder">保存并同步</button><p class="meta">移除目录或移走文件后，已导入的数据保留为历史来源。</p></div></div>`;
+  const paths=$('#folderPath'),destination=$('#defaultImportFolder'),save=$('#connectFolder'),error=$('#sourceError');
+  const enteredFolders=()=>[...new Set(paths.value.split(/\r?\n/).map(path=>path.trim()).filter(Boolean))];
+  const updateDestinations=()=>{
+    const values=enteredFolders(),selected=values.includes(destination.value)?destination.value:values[0];
+    destination.innerHTML=options(values,selected);destination.disabled=!values.length;save.disabled=!values.length;
+  };
+  paths.addEventListener('input',updateDestinations);updateDestinations();
+  $('#dialog').showModal();
+  save.onclick=async()=>{
+    if(save.disabled)return;
+    save.disabled=true;save.textContent='正在保存…';error.hidden=true;paths.disabled=true;destination.disabled=true;
+    try{
+      const saved={folders:enteredFolders(),folder:destination.value,auto:$('#autoSync').checked};
+      await api('config',saved);state.config={...state.config,...saved};
+      if($('#dialogBody').contains(save))$('#dialog').close();
+      toast('已开始同步所有数据目录');trackRequestedSync();
+    }catch(e){error.textContent=e.message;error.hidden=false;}
+    finally{paths.disabled=false;destination.disabled=!enteredFolders().length;save.disabled=!enteredFolders().length;save.textContent='保存并同步';}
+  };
+}
 $('#nav').onclick=e=>{const b=e.target.closest('[data-page]');if(b)go(b.dataset.page);};$('#sourceButton').onclick=sourceDialog;$('#syncButton').onclick=async()=>{try{$('#syncButton').disabled=true;await api('sync',{});toast('正在同步新增和变更文件');trackRequestedSync();}catch(e){$('#syncButton').disabled=false;toast(e.message);}};$('#search').oninput=e=>{clearTimeout(searchTimer);state.query=e.target.value.trim();searchTimer=setTimeout(()=>{if(state.query)go('search',{background:true});else go('home',{background:true});},450);};document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){e.preventDefault();$('#search').focus();}});
 window.addEventListener('DOMContentLoaded',async()=>{try{await refreshCatalog();try{state.basket=JSON.parse(localStorage.getItem('shujian-basket')||'[]');}catch{}persistBasket();go(['home','raw','explore','compare','saved','health'].includes(location.hash.slice(1))?location.hash.slice(1):'home');setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{const changed=await refreshCatalog();if(changed)go(state.page,{background:true});}catch(e){$('#syncStatus').textContent='连接中断，请检查本地服务';}finally{pollBusy=false;}},AUTO_REFRESH_INTERVAL);}catch(e){$('#main').innerHTML=empty('数据服务未连接',esc(e.message));}});

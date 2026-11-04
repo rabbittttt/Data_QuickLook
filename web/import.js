@@ -11,7 +11,9 @@
   const status=document.querySelector('#importStatus');
   const list=document.querySelector('#importList');
   const progress=document.querySelector('#importProgress');
-  let folder='',jobs=[],busy=false,opening=false;
+  const destination=document.querySelector('#importFolder');
+  const batchNote=document.querySelector('#importBatchFolder');
+  let folder='',batchFolder='',jobs=[],busy=false,opening=false;
   const limit=256*1024*1024;
   const sizeLabel=size=>size<1024*1024?`${Math.ceil(size/1024)} KB`:`${(size/1024/1024).toFixed(1)} MB`;
 
@@ -27,24 +29,30 @@
   entry.addEventListener('click',async()=>{
     if(!dialog.open)dialog.showModal();
     if(busy||opening)return;
-    opening=true;input.disabled=true;start.disabled=true;
-    const previousFolder=folder;
+    opening=true;input.disabled=true;start.disabled=true;destination.disabled=true;
     if(!jobs.length){
       input.value='';start.hidden=false;progress.hidden=true;done.textContent='关闭';
       status.textContent='正在读取当前数据源…';
-      document.querySelector('#importFolder').textContent='正在读取…';
+      destination.innerHTML='<option value="">正在读取…</option>';
     }
     try{
-      const catalog=await api('catalog');folder=catalog.config.folder;
-      document.querySelector('#importFolder').textContent=folder;
+      const catalog=await api('catalog'),folders=configuredSourceFolders(catalog.config);
+      folder=folders.includes(folder)?folder:folders.includes(catalog.config.folder)?catalog.config.folder:folders[0]||'';
+      destination.innerHTML=options(folders,folder);destination.value=folder;destination.title=folder;destination.disabled=!folders.length;
       if(!jobs.length)status.textContent='选择文件后开始导入。';
-      else if(previousFolder&&previousFolder!==folder)status.textContent=`数据源已变更。上批结果保留，之前的文件保存在 ${previousFolder}；接下来选择的文件将导入上方新目录。`;
-      input.disabled=false;start.disabled=!jobs.some(job=>job.result==='pending');
-    }catch(error){folder='';status.textContent=`无法读取数据源：${error.message}。请关闭后重试。`;}
+      input.disabled=!folder;start.disabled=!folder||!jobs.some(job=>job.result==='pending');
+    }catch(error){folder='';destination.innerHTML='<option value="">数据源读取失败</option>';status.textContent=`无法读取数据源：${error.message}。请关闭后重试。`;}
     finally{opening=false;}
   });
 
+  destination.addEventListener('change',()=>{
+    if(busy){destination.value=folder;return;}
+    folder=destination.value;destination.title=folder;
+    start.disabled=!folder||!jobs.some(job=>job.result==='pending');
+  });
+
   input.addEventListener('change',()=>{
+    batchFolder='';batchNote.hidden=true;batchNote.textContent='';
     jobs=Array.from(input.files).map(file=>{
       const error=!/\.(xlsx|xlsm)$/i.test(file.name)?'格式不支持；请另存为 .xlsx 或 .xlsm':
         !file.size?'文件为空，请检查原文件':file.size>limit?'超过 256 MB，请拆分文件后导入':'';
@@ -57,10 +65,10 @@
     done.textContent='关闭';
   });
 
-  function confirmOverwrite(file,conflict,changed){
+  function confirmOverwrite(file,conflict,changed,targetFolder){
     const confirmation=document.querySelector('#importOverwriteDialog');
     document.querySelector('#importOverwriteName').textContent=conflict.name;
-    document.querySelector('#importOverwriteFolder').textContent=folder;
+    document.querySelector('#importOverwriteFolder').textContent=targetFolder;
     document.querySelector('#importOverwriteSizes').textContent=`已有文件：${sizeLabel(conflict.size)} · 即将导入：${sizeLabel(file.size)}`;
     document.querySelector('#importOverwriteChanged').hidden=!changed;
     confirmation.returnValue='skip';
@@ -71,10 +79,10 @@
     });
   }
 
-  function upload(file,index,replaceVersion=''){
+  function upload(file,index,targetFolder,replaceVersion=''){
     return new Promise((resolve,reject)=>{
       const xhr=new XMLHttpRequest();
-      const params=new URLSearchParams({filename:file.name,folder});
+      const params=new URLSearchParams({filename:file.name,folder:targetFolder});
       if(replaceVersion)params.set('replace_version',replaceVersion);
       xhr.open('POST','/api/import?'+params);
       xhr.setRequestHeader('Content-Type','application/octet-stream');
@@ -100,7 +108,8 @@
 
   start.addEventListener('click',async()=>{
     if(busy||!folder||!jobs.some(job=>job.result==='pending'))return;
-    busy=true;input.disabled=true;start.disabled=true;progress.hidden=false;progress.max=jobs.length;progress.value=0;
+    const targetFolder=folder;batchFolder=targetFolder;batchNote.textContent='本批导入目标：'+batchFolder;batchNote.hidden=false;
+    busy=true;input.disabled=true;destination.disabled=true;start.disabled=true;progress.hidden=false;progress.max=jobs.length;progress.value=0;
     entry.textContent='导入中';done.textContent='后台继续';
     try{
       for(let index=0;index<jobs.length;index++){
@@ -110,14 +119,14 @@
         try{
           let replaceVersion='';
           while(true){
-            const result=await upload(jobs[index].file,index,replaceVersion);
+            const result=await upload(jobs[index].file,index,targetFolder,replaceVersion);
             if(!result.overwrite_required){
               updateJob(index,'saved',result.overwritten?'已覆盖原文件':`已保存：${result.name}`);
               break;
             }
             updateJob(index,'confirming','同名文件已存在，等待确认覆盖');
             entry.textContent='待确认';status.textContent=`正在等待确认：${jobs[index].file.name}`;
-            const confirmed=await confirmOverwrite(jobs[index].file,result,!!replaceVersion);
+            const confirmed=await confirmOverwrite(jobs[index].file,result,!!replaceVersion,targetFolder);
             entry.textContent='导入中';
             if(!confirmed){updateJob(index,'skipped','已跳过，原文件保留');break;}
             replaceVersion=result.version;
@@ -140,7 +149,7 @@
       }
       if(!dialog.open)toast(status.textContent);
     }finally{
-      busy=false;input.disabled=false;input.value='';start.hidden=true;done.textContent='完成';
+      busy=false;input.disabled=false;destination.disabled=!folder;input.value='';start.hidden=true;done.textContent='完成';
       entry.innerHTML='导入<span class="action-detail">文件</span>';
     }
   });

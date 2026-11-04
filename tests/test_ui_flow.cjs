@@ -12,7 +12,7 @@ function catalogContext(){
   const $=nodes(),calls=[];
   const initial={tables:[{id:'A',scanned_at:'v1',archived:false}],status:{busy:false,errors:[],last_sync:'2026-09-22 12:00'},config:{folder:'current'}};
   let current=initial;
-  const c=vm.createContext({structuredClone,console,$,state:{tables:[],cache:new Map(),page:'compare',basket:[]},draft:{previewActive:false},lastStamp:'',activeTables:()=>c.state.tables.filter(t=>!t.archived),api:async()=>current,renderCatalogUpdateNotice:()=>calls.push('notice'),toast:message=>calls.push(message),go:async(page,options)=>calls.push({page,options})});
+  const c=vm.createContext({structuredClone,console,$,state:{tables:[],cache:new Map(),page:'compare',basket:[]},draft:{previewActive:false},lastStamp:'',configuredSourceFolders:config=>config?.folders||[config?.folder].filter(Boolean),activeTables:()=>c.state.tables.filter(t=>!t.archived),api:async()=>current,renderCatalogUpdateNotice:()=>calls.push('notice'),toast:message=>calls.push(message),go:async(page,options)=>calls.push({page,options})});
   vm.runInContext(snippet('function catalogStamp(', 'function go('),c);
   return {c,$,calls,initial,setResult:result=>current=result,next:version=>({...initial,tables:[{id:'A',scanned_at:version,archived:false}]})};
 }
@@ -54,6 +54,17 @@ test('catalog changes during a modal keep live data until explicit acceptance',a
   assert.equal(await c.refreshCatalog(),false,'closing modal does not silently consume pending changes');
   assert.equal(await c.applyPendingCatalog(),true);assert.equal(c.state.tables[0].scanned_at,'v2');assert.equal(c.state.cache.size,0);assert.equal(c.state.catalogPending,false);
   assert.deepEqual(plain(calls.find(item=>item&&item.page)),{page:'compare',options:{background:true}});
+});
+
+test('source changes and archive changes refresh metadata without file edits',async()=>{
+  const {c,initial,setResult}=catalogContext();
+  await c.refreshCatalog();c.state.cache.set('A',{rows:[{销量:10}]});
+  setResult({...initial,config:{folder:'orders',folders:['orders','plans']}});
+  assert.equal(await c.refreshCatalog(),true,'changing roots refreshes source labels even when workbook bytes did not change');
+  assert.equal(c.state.cache.size,0);
+  setResult({...initial,config:{folder:'orders',folders:['orders','plans']},tables:[{...initial.tables[0],archived:true}]});
+  assert.equal(await c.refreshCatalog(),true,'removed/moved sources refresh their history state');
+  assert.equal(c.state.tables[0].archived,true);
 });
 test('active chart draft defers changes and keeps the most recent pending version',async()=>{
   const {c,setResult,next}=catalogContext();await c.refreshCatalog();c.state.cache.set('A',{rows:[{销量:10}]});
