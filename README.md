@@ -8,19 +8,18 @@
 
 ## 安装与启动
 
-新电脑先安装 Python 3.10 或更新版本，并将其加入 PATH。在本项目目录创建独立环境并安装依赖：
+所有项目默认共用所在 `Project/.venv`。新电脑先安装 Python 3.11 或更新版本（共享环境要求），在 `Project` 根目录双击“初始化共享环境.cmd”重建共享环境并安装依赖。项目位于 `Project/数据速查/` 时，也可在本项目目录手动安装依赖、启动服务：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe server.py
+..\.venv\Scripts\python.exe -m pip install -r requirements.txt
+..\.venv\Scripts\python.exe server.py
 ```
 
-换电脑后应重新创建 `.venv`，不要直接复制旧电脑的虚拟环境。代码与业务文件分别迁移，保留项目与共享目录的相对位置。
+换电脑后应重新创建 `Project/.venv`，不要直接复制旧电脑的虚拟环境。整体移动 `Project` 时保留项目与共享目录的相对位置；`Project` 的上级目录和盘符可以不同。
 
-`启动数据速查.cmd` 优先使用本项目 `.venv\Scripts\python.exe`，没有项目环境时使用 PATH 中的 Python，并在启动前检查版本和依赖。可用 `DATA_QUICKLOOK_PYTHON` 指定其他解释器文件；相对路径按本项目目录解析。启动窗口会显示所选 Python；显式路径无效、项目 `.venv` 不完整或所选环境缺依赖时会提示并停止，不自动安装或换用其他环境。
+`启动数据速查.cmd` 从脚本所在目录向上找到最近名为 `Project` 的目录，固定使用其中 `.venv\Scripts\python.exe`，忽略子项目自己的 `.venv`，也不回退 PATH 或 Codex Python。可用 `DATA_QUICKLOOK_PYTHON` 显式指定其他解释器文件；相对路径按本项目目录解析。启动窗口显示所选 Python，并在环境缺失或依赖不全时停止，提示初始化或安装命令。
 
-也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:8765)；命令行使用 `python server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:8765`。
+也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:8765)；命令行使用 `..\.venv\Scripts\python.exe server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:8765`。
 
 更新代码后普通刷新网页即可检查新版页面、样式、脚本和图标：静态资源按文件内容自动生成版本号，未变化的内容仍可复用缓存。若更新包含 `server.py` 等 Python 后端代码，需先重启服务（本次缓存策略更新也需要重启一次）。已打开的页面不会自动重载，以保留正在编辑的内容；“同步数据”仍只负责 Excel 数据更新。
 
