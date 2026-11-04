@@ -30,9 +30,6 @@
 .import-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .import-actions form{margin:0}
 @media(max-width:600px){
-  .top-actions .action-detail{display:none}
-  .top-actions{gap:6px}
-  .top-actions button{padding:8px}
   #importFiles::file-selector-button{min-height:44px}
   .source-settings textarea{font-size:16px}
 }

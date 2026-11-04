@@ -14,6 +14,7 @@
 <script src="vendor/echarts.min.js" defer></script>
 <script src="feedback.js" defer></script>
 <script src="app.js" defer></script>
+<script src="sidebar.js" defer></script>
 <script src="import.js" defer></script>
 <script src="chart-logic.js" defer></script>
 <script src="chart-state.js" defer></script>
@@ -22,8 +23,16 @@
 </head>
 <body>
 <a class="skip-link" href="#main" onclick="event.preventDefault();document.getElementById('main').focus();">跳到主要内容</a>
-<header class="workspace-header"><a class="brand" href="#home" aria-label="数据速查，返回数据概览"><img class="brandmark" src="favicon.svg" width="34" height="34" alt=""><span>数据速查<small>DATA QUICKLOOK</small></span></a><nav id="nav" aria-label="主导航"><button data-page="home"><span>数据概览</span></button><button data-page="explore"><span>数据管理</span><em id="tableCount"></em></button><button data-page="compare"><span>图表展示</span><em id="basketCount">0</em></button><button data-page="saved"><span>收藏的分析</span></button></nav><div class="workspace-tools"><span class="workspace-label">本地工作空间</span><span class="storage-note"><span class="dot"></span> 数据保存在本机</span><button id="sourceButton">管理数据源 ↗</button></div></header>
-<div class="app"><header class="topbar"><div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索全部文件、参数或数据内容…" aria-label="全局搜索"><kbd>/</kbd></div><div class="top-actions"><span id="syncStatus" role="status">正在连接数据仓库</span><button id="importButton" class="primary" aria-haspopup="dialog" aria-controls="importDialog">导入<span class="action-detail">文件</span></button><button id="syncButton" aria-label="同步数据">↻ 同步<span class="action-detail">数据</span></button></div></header><main id="main" tabindex="-1"></main></div>
+<button id="menuToggle" class="sidebar-toggle" aria-controls="workspaceSidebar" aria-expanded="false">菜单</button>
+<button id="sidebarBackdrop" class="sidebar-backdrop" hidden aria-label="关闭菜单" tabindex="-1"></button>
+<aside id="workspaceSidebar" class="workspace-header" aria-label="导航与数据操作">
+  <div class="sidebar-heading"><a class="brand" href="#home" aria-label="数据速查，返回数据概览"><img class="brandmark" src="favicon.svg" width="34" height="34" alt=""><span>数据速查<small>DATA QUICKLOOK</small></span></a><button id="sidebarClose" class="sidebar-close" aria-label="关闭菜单">×</button></div>
+  <div class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索全部数据…" aria-label="全局搜索" enterkeyhint="search"><kbd>/</kbd></div>
+  <nav id="nav" aria-label="主导航"><button data-page="home"><span>数据概览</span></button><button data-page="explore"><span>数据管理</span><em id="tableCount"></em></button><button data-page="compare"><span>图表展示</span><em id="basketCount">0</em></button><button data-page="saved"><span>收藏的分析</span></button></nav>
+  <section class="sidebar-data-actions" aria-label="数据同步与导入"><span id="syncStatus" role="status">正在连接数据仓库</span><div class="top-actions"><button id="importButton" class="primary" aria-haspopup="dialog" aria-controls="importDialog">导入<span class="action-detail">文件</span></button><button id="syncButton" aria-label="同步数据">↻ 同步<span class="action-detail">数据</span></button></div></section>
+  <div class="workspace-tools"><span class="workspace-label">本地工作空间</span><span class="storage-note"><span class="dot"></span> 数据保存在本机</span><button id="sourceButton">管理数据源 ↗</button></div>
+</aside>
+<div class="app"><main id="main" tabindex="-1"></main></div>
 <dialog id="dialog"><div id="dialogBody"></div><form method="dialog"><button class="dialog-close" aria-label="关闭对话框">×</button></form></dialog><div id="toast" role="status" aria-live="polite"></div>
 <dialog id="importDialog" aria-labelledby="importTitle">
   <h2 id="importTitle">导入 Excel 文件</h2>
