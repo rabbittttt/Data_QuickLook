@@ -18,6 +18,7 @@ from openpyxl import Workbook
 
 import server
 from warehouse import ScanResult, Warehouse
+from source_paths import source_config
 
 
 def workbook_bytes(value=100):
@@ -90,6 +91,22 @@ class FileImportHTTPTests(unittest.TestCase):
             return response.status, json.loads(response.read())
         finally:
             connection.close()
+
+    def test_config_endpoint_saves_workspace_source_relative_to_project(self):
+        project = self.root / '数据速查'
+        config_file = project / 'output_file' / 'workspace.json'
+        config_file.parent.mkdir(parents=True)
+        shared = self.root / '共享数据' / '订单汇总'
+        shared.mkdir(parents=True)
+        with patch.object(server, 'ROOT', project), patch.object(server, 'CONFIG', config_file), \
+             patch.object(server, 'request_sync'):
+            status, result = self.request('config', method='POST',
+                body=json.dumps({'folder': '../共享数据/订单汇总', 'auto': False}).encode(),
+                headers={'Content-Type': 'application/json'})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(json.loads(config_file.read_text(encoding='utf-8')),
+                         {'folder': '../共享数据/订单汇总', 'auto': False})
+        self.assertEqual(source_config(project)['folder'], str(shared.resolve()))
 
     def upload(self, name='销量.xlsx', content=None, *, folder=None, headers=None,
                replace_version=None):

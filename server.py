@@ -19,7 +19,7 @@ import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
 from warehouse import Warehouse
-from source_paths import source_config
+from source_paths import source_config, resolve_source_path, portable_source_config
 
 ROOT = Path(__file__).resolve().parent
 STORE = Warehouse(ROOT / 'output_file' / 'warehouse.db')
@@ -394,11 +394,11 @@ class Handler(SimpleHTTPRequestHandler):
                 request_sync()
                 return self.send_json({'started': True})
             if self.path == '/api/config':
-                folder = Path(payload['folder']).expanduser().resolve()
+                folder = resolve_source_path(ROOT, payload['folder']).resolve()
                 if not folder.is_dir():
                     raise ValueError('文件夹不存在')
                 with LOCK:
-                    CONFIG.write_text(json.dumps({'folder': str(folder), 'auto': bool(payload.get('auto', True))}, ensure_ascii=False), encoding='utf-8')
+                    CONFIG.write_text(json.dumps(portable_source_config(ROOT, folder, payload.get('auto', True)), ensure_ascii=False), encoding='utf-8')
                 request_sync()
                 return self.send_json({'saved': True})
             if self.path == '/api/recognition':

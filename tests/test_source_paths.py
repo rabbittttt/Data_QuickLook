@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from source_paths import default_source_directory, source_config
+from source_paths import default_source_directory, source_config, portable_source_config
 
 
 class SourcePathTests(unittest.TestCase):
@@ -62,6 +62,33 @@ class SourcePathTests(unittest.TestCase):
         saved = {"folder": str(self.parent / "custom-source"), "auto": False}
         workspace.write_text(json.dumps(saved), encoding="utf-8")
         self.assertEqual(source_config(self.root, workspace), saved)
+
+    def test_relative_shared_root_and_saved_source_ignore_current_directory(self):
+        workspace = self.root / 'output_file' / 'workspace.json'
+        workspace.parent.mkdir()
+        workspace.write_text(json.dumps({'folder': '../共享数据/订单汇总', 'auto': False}), encoding='utf-8')
+        previous = Path.cwd()
+        try:
+            os.chdir(self.parent)
+            with patch.dict(os.environ, {'SHARED_DATA_ROOT': '../alternate-shared'}):
+                self.assertEqual(default_source_directory(self.root), self.parent.resolve() / 'alternate-shared' / '订单汇总')
+                self.assertEqual(source_config(self.root)['folder'], str(self.parent.resolve() / '共享数据' / '订单汇总'))
+        finally:
+            os.chdir(previous)
+
+    def test_workspace_sources_are_portable_and_external_sources_stay_absolute(self):
+        shared = self.parent / '共享数据' / '订单汇总'
+        saved = portable_source_config(self.root, shared, False)
+        self.assertEqual(saved, {'folder': '../共享数据/订单汇总', 'auto': False})
+        self.assertEqual(portable_source_config(self.root, self.root / 'input_file')['folder'], 'input_file')
+        moved_root = self.parent / 'relocated-workspace' / '数据速查'
+        workspace = moved_root / 'output_file' / 'workspace.json'
+        workspace.parent.mkdir(parents=True)
+        workspace.write_text(json.dumps(saved), encoding='utf-8')
+        self.assertEqual(source_config(moved_root)['folder'], str(moved_root.parent.resolve() / '共享数据' / '订单汇总'))
+        with tempfile.TemporaryDirectory() as outside:
+            external = Path(outside).resolve() / 'outside-source'
+            self.assertEqual(portable_source_config(self.root, external)['folder'], str(external))
 
 
 if __name__ == "__main__":
