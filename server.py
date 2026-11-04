@@ -456,7 +456,7 @@ def watch():
 
 
 WORKBENCH_URL = 'http://127.0.0.1:8765'
-APP_TITLE = 'Excel 数据查询与图表分析'
+APP_TITLE = '数据速查 · Data QuickLook'
 
 
 class WorkbenchHTTPServer(ThreadingHTTPServer):
@@ -483,7 +483,7 @@ def workbench_running():
         connection.request('GET', '/')
         response = connection.getresponse()
         page = response.read(16384)
-        titles = (APP_TITLE, '数见 · 经营数据工作台')
+        titles = (APP_TITLE, 'Excel 数据查询与图表分析', '数见 · 经营数据工作台')
         return response.status == 200 and any(f'<title>{title}</title>'.encode('utf-8') in page for title in titles)
     except (OSError, HTTPException):
         return False
@@ -496,7 +496,7 @@ def run_server(open_browser=False):
         httpd = WorkbenchHTTPServer(('127.0.0.1', 8765), Handler)
     except OSError:
         if open_browser and workbench_running():
-            print('数据分析工具已经运行，正在打开现有页面。', flush=True)
+            print('数据速查已经运行，正在打开现有页面。', flush=True)
             open_workbench()
             return
         raise

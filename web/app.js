@@ -172,7 +172,7 @@ async function compare(token){
   $('#chartLimit').onchange=e=>{state.limit=e.target.value;drawComparison();};
   $('#baseline').onchange=e=>{state.baseline=e.target.checked;drawComparison();};
   $('#saveView').onclick=()=>state.chartPreview?toast('请先应用草稿，再保存分析'):state.basket.length?saveView():toast('请先生成图表');
-  $('#png').onclick=()=>{const c=state.charts.find(c=>c.getDom()?.id==='compareChart');if(!c)return toast('当前没有图表');const a=document.createElement('a');a.download='Excel-对比分析.png';a.href=c.getDataURL({pixelRatio:2,backgroundColor:'#fff'});a.click();};
+  $('#png').onclick=()=>{const c=state.charts.find(c=>c.getDom()?.id==='compareChart');if(!c)return toast('当前没有图表');const a=document.createElement('a');a.download='数据速查-对比分析.png';a.href=c.getDataURL({pixelRatio:2,backgroundColor:'#fff'});a.click();};
   drawComparison();
 }
 function drawComparison(){
@@ -230,7 +230,7 @@ function drawComparison(){
   const rows=incompatibleAxes?groups.flatMap((g,i)=>ownKeys[i].map(k=>({'系列':labels[i],'对比项':k,'数值':g.get(k)??null}))):keys.map(k=>{const row={'对比项':k};groups.forEach((g,i)=>row[labels[i]]=g.get(k)??null);if(state.baseline&&groups.length>1){const base=groups[0].get(k);groups.slice(1).forEach((g,j)=>{const value=g.get(k);row[labels[j+1]+' 差值']=value==null||base==null?null:value-base;row[labels[j+1]+' 变化率%']=value==null||base==null||base===0?null:(value-base)/base*100;});}return row;});
   $('#baseline').disabled=incompatibleAxes;
   $('#compareGrid').innerHTML=rows.length?grid(rows.slice(0,300),Object.keys(rows[0]))+(rows.length>300?`<p class="meta">预览前 300 / ${rows.length} 行；导出 CSV 包含全部行和系列。</p>`:''):'<div class="empty">没有匹配的数据，请调整筛选或维度。</div>';
-  $('#exportCompare').onclick=()=>exportCSV(rows,rows.length?Object.keys(rows[0]):['对比项'],'Excel-数据对比.csv');
+  $('#exportCompare').onclick=()=>exportCSV(rows,rows.length?Object.keys(rows[0]):['对比项'],'数据速查-数据对比.csv');
   $('#compareChart').style.display=type==='table'?'none':'block';
   if(type==='table'||!displayCount){$('#compareChart').innerHTML=type==='table'?'':'<div class="empty">'+(errors.length?'部分图表参数需要修正，请查看上方提示。':'选择当前表格与参数，在此预览图表。')+'</div>';return;}
   $('#compareChart').innerHTML='';

@@ -18,7 +18,7 @@ SOURCE_SETTINGS = source_config(ROOT)
 DEFAULT_SOURCES = SOURCE_SETTINGS.get('folders', [SOURCE_SETTINGS['folder']])
 DATABASE = ROOT / "output_file" / "warehouse.db"
 
-st.set_page_config(page_title="Excel 数据查询与图表分析", page_icon=":material/bar_chart:", layout="wide")
+st.set_page_config(page_title="数据速查 · Data QuickLook", page_icon=":material/bar_chart:", layout="wide")
 
 st.markdown(
     """
@@ -100,7 +100,7 @@ if auto_sync:
             st.error(f'自动同步失败：{exc}')
     refresh_sources()
 
-st.title("Excel 数据查询与图表分析")
+st.title("数据速查 · Data QuickLook")
 st.caption("集中识别分散 Excel，快速完成查询、筛选和经营分析")
 
 catalog = store.catalog()
@@ -163,7 +163,7 @@ with analysis_tab:
                 render_chart(result, dimension, metric, chart_type)
             with table_col:
                 st.dataframe(result, width="stretch", hide_index=True, height=460)
-            st.download_button("下载当前分析 CSV", result.to_csv(index=False).encode("utf-8-sig"), "Excel-数据分析.csv", "text/csv")
+            st.download_button("下载当前分析 CSV", result.to_csv(index=False).encode("utf-8-sig"), "数据速查-分析.csv", "text/csv")
 
 with question_tab:
     selected = choose_dataset(catalog, "question_dataset")

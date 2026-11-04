@@ -1,10 +1,10 @@
-# Excel 数据查询与图表分析
+# 数据速查 · Data QuickLook
 
-> 此公开仓库只保存程序代码；`input_file`、`output_file`、数据库、日志和压缩包不会上传。换电脑后需要自行安全迁移业务 Excel。下载代码可运行 `git clone https://github.com/rabbittttt/Excel_Data_Analysis.git`，以后在仓库目录运行 `git pull` 更新。
+> 此公开仓库只保存程序代码；`input_file`、`output_file`、数据库、日志和压缩包不会上传。换电脑后需要自行安全迁移业务 Excel。下载代码可运行 `git clone https://github.com/rabbittttt/Data_QuickLook.git`，以后在仓库目录运行 `git pull` 更新。
 
 面向本地及共享 Excel 文件夹的数据查询与图表分析工具。主入口为独立网页：数据概览、数据管理、图表展示、收藏的分析。读取和分析不会修改原始 Excel。
 
-已克隆旧仓库的用户可运行 `git remote set-url origin https://github.com/rabbittttt/Excel_Data_Analysis.git` 更新远程地址。旧地址仍可通过 GitHub 重定向访问，建议更新为新地址。
+已克隆旧仓库的用户可运行 `git remote set-url origin https://github.com/rabbittttt/Data_QuickLook.git` 更新远程地址。旧地址仍可通过 GitHub 重定向访问，建议更新为新地址。
 
 ## 安装与启动
 
@@ -15,7 +15,7 @@ python -m pip install -r requirements.txt
 python server.py
 ```
 
-也可双击 `启动数据分析.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:8765)；命令行使用 `python server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:8765`。
+也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:8765)；命令行使用 `python server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:8765`。
 
 更新代码后普通刷新网页即可检查新版页面、样式、脚本和图标：静态资源按文件内容自动生成版本号，未变化的内容仍可复用缓存。若更新包含 `server.py` 等 Python 后端代码，需先重启服务（本次缓存策略更新也需要重启一次）。已打开的页面不会自动重载，以保留正在编辑的内容；“同步数据”仍只负责 Excel 数据更新。
 
