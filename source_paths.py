@@ -10,15 +10,18 @@ def resolve_source_path(root, value):
     return path if path.is_absolute() else (Path(root).resolve() / path).resolve()
 
 
-def default_source_directory(root):
+def shared_data_root(root):
     root = Path(root)
     configured = os.environ.get("SHARED_DATA_ROOT")
     if configured:
-        return resolve_source_path(root, configured) / "订单汇总"
+        return resolve_source_path(root, configured)
     shared_root = root.parent / "共享数据"
-    if shared_root.is_dir():
-        return shared_root / "订单汇总"
-    return root / "input_file"
+    return shared_root if shared_root.is_dir() else None
+
+
+def default_source_directory(root):
+    shared_root = shared_data_root(root)
+    return shared_root / "订单汇总" if shared_root is not None else Path(root) / "input_file"
 
 
 def default_source_directories(root):

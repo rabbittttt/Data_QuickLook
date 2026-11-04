@@ -19,7 +19,7 @@ import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
 from warehouse import Warehouse, scan_source_files
-from source_paths import source_config, resolve_source_path, portable_source_config, source_directories
+from source_paths import source_config, resolve_source_path, portable_source_config, source_directories, shared_data_root
 
 ROOT = Path(__file__).resolve().parent
 STORE = Warehouse(ROOT / 'output_file' / 'warehouse.db')
@@ -501,6 +501,10 @@ def run_server(open_browser=False):
             return
         raise
     with httpd:
+        shared = shared_data_root(ROOT)
+        if shared is not None:
+            STORE.relocate_shared_sources(shared, active_sources=source_directories(config()),
+                                          rules_path=ROOT / 'output_file' / 'recognition.json', dry_run=False)
         threading.Thread(target=watch, daemon=True).start()
         print(f'{APP_TITLE}: {WORKBENCH_URL}', flush=True)
         if open_browser:

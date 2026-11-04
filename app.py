@@ -10,7 +10,7 @@ import streamlit as st
 from analysis_engine import apply_filters, dimension_candidates, interpret_question, numeric_candidates, summarize
 from warehouse import Warehouse
 from comparison import render_comparison
-from source_paths import source_config
+from source_paths import source_config, source_directories, shared_data_root
 
 
 ROOT = Path(__file__).resolve().parent
@@ -43,7 +43,12 @@ st.markdown(
 
 @st.cache_resource
 def warehouse() -> Warehouse:
-    return Warehouse(DATABASE)
+    store = Warehouse(DATABASE)
+    shared = shared_data_root(ROOT)
+    if shared is not None:
+        store.relocate_shared_sources(shared, active_sources=source_directories(SOURCE_SETTINGS),
+                                      rules_path=ROOT / 'output_file' / 'recognition.json', dry_run=False)
+    return store
 
 
 def choose_dataset(catalog: pd.DataFrame, key: str) -> str:

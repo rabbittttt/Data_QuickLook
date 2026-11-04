@@ -13,6 +13,7 @@ from typing import Iterable
 import pandas as pd
 
 from excel_parser import ParsedTable, discover_tables, infer_series_type, scan_excel_files, PARSER_VERSION
+from workspace_relocation import relocate_shared_sources
 
 
 @dataclass
@@ -108,6 +109,10 @@ class Warehouse:
     def rebuild(self, folder: str | Path | Iterable[str | Path]) -> ScanResult:
         return self.sync(folder, force=True)
 
+    def relocate_shared_sources(self, shared_root, *, active_sources=None, rules_path=None, dry_run=True):
+        return relocate_shared_sources(self.path, shared_root, active_sources=active_sources,
+                                       rules_path=rules_path, dry_run=dry_run)
+
     def sync(self, folder: str | Path | Iterable[str | Path], force: bool = False) -> ScanResult:
         files, errors = scan_source_files(folder)
         for file_path in files:
@@ -135,14 +140,22 @@ class Warehouse:
     def _replace_file(self, file_path, tables, signature):
         with self.connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
-            old_tables = [row[0] for row in connection.execute("SELECT sql_table FROM datasets WHERE file_path=?", (str(file_path),))]
+            previous = connection.execute(
+                'SELECT id, sql_table, sheet_name, range_ref FROM datasets WHERE file_path=?',
+                (str(file_path),)).fetchall()
+            identities = {(row['sheet_name'], row['range_ref'].split(':')[0]): (row['id'], row['sql_table'])
+                          for row in previous}
+            if len(identities) != len(previous):
+                raise ValueError('已有数据区域起点重复，未覆盖原数据')
+            old_tables = [row['sql_table'] for row in previous]
             for sql_table in old_tables:
                 connection.execute(f'DROP TABLE IF EXISTS "{sql_table}"')
             connection.execute("DELETE FROM datasets WHERE file_path=?", (str(file_path),))
             # Keep successive imports distinct even when a file is saved twice in one second.
             now = datetime.now().isoformat(timespec="microseconds")
             for table in tables:
-                dataset_id, sql_table = self._identity(table)
+                dataset_id, sql_table = identities.get(
+                    (table.sheet_name, table.range_ref.split(':')[0]), self._identity(table))
                 frame = table.dataframe.copy()
                 frame.columns = [str(column) for column in frame.columns]
                 frame.insert(0, "_source_row", range(table.header_row + 1, table.header_row + 1 + len(frame)))
