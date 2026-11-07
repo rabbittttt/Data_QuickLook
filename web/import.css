@@ -4,10 +4,10 @@
 #importOverwriteDialog p{line-height:1.6;overflow-wrap:anywhere}
 .import-conflict-name{font-weight:600;margin-top:14px}
 #importOverwriteDialog .import-actions{flex-wrap:wrap}
-.import-replace{background:#a22d25;color:white;border-color:#a22d25}
-.import-replace:hover{background:#85251f;border-color:#85251f}
+.import-replace{background:#a33455;color:white;border-color:#a33455}
+.import-replace:hover{background:#8a2745;border-color:#8a2745}
 #importDialog .meta{line-height:1.6}
-.import-destination{font-size:12px;line-height:1.6;background:#f3f6f1;border-radius:6px;padding:8px 10px;margin:12px 0;overflow-wrap:anywhere}
+.import-destination{font-size:12px;line-height:1.6;background:var(--surface-muted);border-radius:6px;padding:8px 10px;margin:12px 0;overflow-wrap:anywhere}
 .import-destination span{display:block;color:var(--text-secondary)}
 .import-target{display:grid;gap:6px;font-size:13px;margin:12px 0}
 .import-target select,.source-settings select{min-width:0;width:100%;max-width:100%}
@@ -24,8 +24,8 @@
 .import-list strong{font-weight:500;overflow-wrap:anywhere}
 .import-list small{color:var(--text-secondary);font-size:12px}
 .import-file-status{grid-column:1/-1;color:var(--text-secondary);overflow-wrap:anywhere}
-.import-list [data-result=error] .import-file-status{color:#a22d25}
-.import-list [data-result=saved] .import-file-status{color:#21654f}
+.import-list [data-result=error] .import-file-status{color:#a33455}
+.import-list [data-result=saved] .import-file-status{color:#20683d}
 #importProgress{width:100%;height:8px;accent-color:var(--primary)}
 .import-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .import-actions form{margin:0}

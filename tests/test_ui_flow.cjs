@@ -179,12 +179,12 @@ test('truncated search results disclose the shown count and a way to narrow resu
   await c.search(1);assert.match(headings.at(-1),/77.*当前显示前 60.*缩小关键词/);assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,60);
   count=2;await c.search(1);assert.doesNotMatch(headings.at(-1),/前 60/);assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,2);
 });
-test('compact page heading retains an accessible route name without visible introductory copy',()=>{
+test('visible page heading retains one route name without introductory copy',()=>{
   const c=vm.createContext({esc:String});vm.runInContext(snippet('function header(', 'function options('),c);
   const rendered=c.header('CHART STUDIO / 图表展示','','选表、选参数');
-  assert.match(rendered,/<h1 class="visually-hidden">图表展示<\/h1>/);
+  assert.match(rendered,/<h1>图表展示<\/h1>/);
   assert.doesNotMatch(rendered,/CHART STUDIO|选表、选参数/);
-  assert.match(c.header('OVERVIEW / 工作台','从分散的表格，到清晰的比较'),/<h1 class="visually-hidden">工作台<\/h1>/);
+  assert.match(c.header('OVERVIEW / 工作台','从分散的表格，到清晰的比较'),/<h1>工作台<\/h1>/);
 });
 test('missing selected options remain visible instead of appearing to choose the first valid field',()=>{
   const c=vm.createContext({esc:String});vm.runInContext(snippet('function options(', 'function empty('),c);

@@ -4,7 +4,7 @@ const app=fs.readFileSync('web/app.js','utf8');
 const elements=new Map(),tables=new Map();
 const state={basket:[],charts:[],cache:new Map(),chartType:'bar',limit:'全部',baseline:true};
 let rendered,exported;
-const c=vm.createContext({state,structuredClone,colors:['green','blue'],tableById:id=>tables.get(id),
+const c=vm.createContext({state,structuredClone,colors:['green','blue'],chartGrid:'#e5e7ed',tableById:id=>tables.get(id),
   $:id=>{if(!elements.has(id))elements.set(id,{style:{}});return elements.get(id);},
   grid:rows=>JSON.stringify(rows),exportCSV:rows=>{exported=rows;},chart:(_element,option)=>{rendered=option;}});
 vm.runInContext(fs.readFileSync('web/chart-logic.js','utf8')+'\n'+

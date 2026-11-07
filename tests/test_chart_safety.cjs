@@ -10,7 +10,7 @@ const elements=new Map();
 const state={basket:[],charts:[],cache:new Map(),chartType:'auto',limit:'全部',baseline:false};
 const tables=new Map();
 let rendered,exported;
-const context=vm.createContext({state,structuredClone,colors:['green','blue'],tableById:id=>tables.get(id),
+const context=vm.createContext({state,structuredClone,colors:['green','blue'],chartGrid:'#e5e7ed',tableById:id=>tables.get(id),
   $:id=>{if(!elements.has(id))elements.set(id,{style:{}});return elements.get(id);},
   grid:rows=>JSON.stringify(rows),exportCSV:(rows,columns)=>{exported={rows,columns};},chart:(_el,option)=>{rendered=option;}});
 vm.runInContext(fs.readFileSync('web/chart-logic.js','utf8')+'\n'+numeric+aggregation+rendering+';this.aggregate=aggregateRows;this.draw=drawComparison;',context);

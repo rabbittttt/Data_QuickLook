@@ -3,7 +3,8 @@ const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{if(v===null||v===undefined||v==='')return null;const s=String(v).trim().replace(/[,，]/g,'');if(!s)return null;const n=Number(s.replace(/%$/,''));return Number.isFinite(n)?n/(s.endsWith('%')?100:1):null;};
 const fmt=n=>n===null||n===undefined?'—':typeof n==='number'?n.toLocaleString('zh-CN',{maximumFractionDigits:3}):String(n);
-const colors=['#277763','#a96e25','#557ca7','#856697','#788a35','#a85f56'];
+const colors=['#2859f5','#25804a','#b6661d','#7656c3','#197c92','#bb4770'];
+const chartGrid='#e5e7ed';
 const state={tables:[],page:'home',file:'',query:'',basket:[],cache:new Map(),charts:[],chartType:'auto',axisSwapped:false,limit:'全部',baseline:false};
 const AUTO_REFRESH_INTERVAL=10*60*1000;
 let renderToken=0, searchTimer, syncProgressTimer, pollBusy=false, lastStamp='';
@@ -19,11 +20,11 @@ function tableById(id){return state.tables.find(t=>t.id===id);}
 function activeTables(){return state.tables.filter(t=>!t.archived);}
 function configuredSourceFolders(config){return [...new Set((config?.folders?.length?config.folders:[config?.folder]).filter(Boolean))];}
 function dispose(){state.charts.forEach(c=>c.dispose());state.charts=[];}
-function chart(element,option){if(!element)return;const instance=echarts.init(element);instance.setOption({color:colors,textStyle:{fontFamily:'Segoe UI, Microsoft YaHei'},animation:false,...option});state.charts.push(instance);return instance;}
+function chart(element,option){if(!element)return;const instance=echarts.init(element);instance.setOption({color:colors,textStyle:{color:'#606775',fontFamily:'Segoe UI, Microsoft YaHei'},animation:false,...option,tooltip:{borderColor:chartGrid,textStyle:{color:'#0b0d17'},...option.tooltip}});state.charts.push(instance);return instance;}
 window.addEventListener('resize',()=>state.charts.forEach(c=>c.resize()));
 if(typeof MutationObserver==='function')new MutationObserver(()=>{if($('#dialog').open&&typeof uiFeedback==='function')uiFeedback($('#dialog'),'dialog');}).observe($('#dialog'),{attributes:true,attributeFilter:['open']});
 $('.brand').onclick=e=>{e.preventDefault();go('home');};
-function header(eyebrow){return `<div class="pagehead pagehead-compact"><h1 class="visually-hidden">${esc(eyebrow.split(' / ').at(-1))}</h1></div>`;}
+function header(eyebrow){return `<div class="pagehead"><h1>${esc(eyebrow.split(' / ').at(-1))}</h1></div>`;}
 function options(values,selected){
   if(values.includes('有效数值计数')&&!values.includes('非空计数'))values=[...values,'非空计数'];
   const stale=selected!=null&&selected!==''&&!values.includes(selected)?`<option value="${esc(selected)}" selected>[已失效] ${esc(selected)}</option>`:'';
@@ -138,8 +139,21 @@ function aggregateRows(data,series){
   });
   return result;
 }
-async function home(token){const tables=activeTables();const recommended=recommend();$('#main').innerHTML=header('OVERVIEW / 数据概览','从分散的表格，到清晰的比较','搜索一个参数，找到数据，把关心的指标放在一起。')+`<div class="hero"><div><div class="eyebrow">YOUR DATA, CONNECTED</div><h2>文件继续增加，分析从这里开始。</h2><p>保留熟悉的 Excel。自动发现数据、追溯来源，在一个工作空间完成查询与对比。</p></div><div class="hero-art" aria-hidden="true"><i style="height:35%"></i><i style="height:60%"></i><i style="height:48%"></i><i style="height:85%"></i><i style="height:100%"></i></div></div><div class="stats">${[['数据文件',new Set(tables.map(t=>t.file_path)).size,'持续汇集的本地数据'],['已识别区域',tables.length,'覆盖多个文件与工作表'],['可选参数',tables.reduce((n,t)=>n+t.fields.length,0),'全部字段均可进入对比'],['已导入行',tables.reduce((n,t)=>n+t.row_count,0),'包含明细、汇总和辅助区']].map(([label,value,sub])=>`<div class="stat"><span>${label}</span><b>${fmt(value)}</b><span>${sub}</span></div>`).join('')}</div><div class="sectionhead"><div><h2>推荐分析</h2><p>根据字段类型生成起点，可随时调整指标与口径</p></div><button class="link" id="allData">浏览全部数据 →</button></div><div class="cards">${recommended.map((t,i)=>`<article class="card"><div class="cardtop"><span class="tag">${/日期|月份/.test(chooseDimension(t))?'趋势分析':'分类对比'}</span><h3 style="margin-top:10px">${esc(metricFields(t)[0].name)} · ${esc(chooseDimension(t))}</h3><p title="${esc(t.relative_path)}">${esc(t.file_name)} / ${esc(t.sheet_name)}</p></div><div class="mini-chart" id="mini${i}"></div><div class="cardfoot"><span>${t.row_count} 行 · ${esc(t.range_ref)}</span><button class="link" data-recommend="${t.id}">打开分析 ↗</button></div></article>`).join('')}</div>`+(tables.length?'':empty('连接你的第一份数据','打开数据源设置，填写本地 Excel 文件夹。','<button id="emptySource">连接文件夹</button>'));
-const startCompare=document.createElement('button');startCompare.id='startCompare';startCompare.className='primary';startCompare.textContent='新建对比 ＋';$('#allData').before(startCompare);const homeActions=document.createElement('div');homeActions.className='home-actions';startCompare.before(homeActions);homeActions.append(startCompare,$('#allData'));$('#startCompare').onclick=()=>go('compare');$('#allData').onclick=()=>{go('explore');};$('#emptySource')?.addEventListener('click',sourceDialog);document.querySelectorAll('[data-recommend]').forEach(b=>b.onclick=async()=>{configureChart(b.dataset.recommend,metricFields(tableById(b.dataset.recommend))[0].name);});
+async function home(token){
+const tables=activeTables(),recommended=recommend();
+const metrics=[
+  ['数据文件',new Set(tables.map(t=>t.file_path)).size,'持续汇集的本地数据','M3 4h4l2 2h8v10H3z'],
+  ['已识别区域',tables.length,'覆盖多个文件与工作表','M3 4h14v12H3zM3 8h14M8 8v8'],
+  ['可选参数',tables.reduce((n,t)=>n+t.fields.length,0),'全部字段均可进入对比','M4 5h12M4 10h12M4 15h12M8 3v4M12 8v4M7 13v4'],
+  ['已导入行',tables.reduce((n,t)=>n+t.row_count,0),'包含明细、汇总和辅助区','M4 15V9m4 6V5m4 10v-4m4 4V3'],
+];
+const cards=recommended.map((t,i)=>`<article class="card"><div class="cardtop"><h3>${esc(metricFields(t)[0].name)} · ${esc(chooseDimension(t))}</h3><span class="tag">${/日期|月份/.test(chooseDimension(t))?'趋势分析':'分类对比'}</span><p title="${esc(t.relative_path)}">${esc(t.file_name)} / ${esc(t.sheet_name)}</p></div><div class="mini-chart" id="mini${i}"></div><div class="cardfoot"><span>${t.row_count} 行 · ${esc(t.range_ref)}</span><button class="link" data-recommend="${t.id}">打开分析 ↗</button></div></article>`).join('');
+$('#main').innerHTML=header('OVERVIEW / 数据概览')+`<div class="stats">${metrics.map(([label,value,sub,icon])=>`<div class="stat"><div class="stat-head"><span>${label}</span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon}"/></svg></div><b>${fmt(value)}</b><span>${sub}</span></div>`).join('')}</div><div class="sectionhead"><div><h2>推荐分析</h2><p>根据字段类型生成起点，可随时调整指标与口径</p></div></div><div class="cards overview-cards">${cards}</div>`+(tables.length?'':empty('连接你的第一份数据','打开数据源设置，填写本地 Excel 文件夹。','<button id="emptySource">连接文件夹</button>'));
+const homeActions=document.createElement('div');
+homeActions.className='home-actions';
+homeActions.innerHTML='<button id="allData">浏览全部数据</button><button id="startCompare" class="primary">＋ 新建对比</button>';
+$('#main .pagehead').append(homeActions);
+$('#startCompare').onclick=()=>go('compare');$('#allData').onclick=()=>go('explore');$('#emptySource')?.addEventListener('click',sourceDialog);document.querySelectorAll('[data-recommend]').forEach(b=>b.onclick=async()=>{configureChart(b.dataset.recommend,metricFields(tableById(b.dataset.recommend))[0].name);});
 await Promise.all(recommended.map(async(t,i)=>{
   const data=await tableData(t.id);if(token!==renderToken)return;
   const metric=metricFields(t)[0].name,dimension=chooseDimension(t),operation=/率|占比|比例/.test(metric)?'平均值':'求和';
@@ -147,9 +161,9 @@ await Promise.all(recommended.map(async(t,i)=>{
   let values=[...aggregateRows(data,{dimension,metric,operation,excludeTotals:true})];
   values=temporal?values.sort((a,b)=>a[0].localeCompare(b[0],'zh-CN',{numeric:true})).slice(-14):values.filter(([,v])=>v!==null).sort((a,b)=>b[1]-a[1]).slice(0,5).reverse();
   chart($('#mini'+i),{tooltip:{trigger:'axis',confine:true},grid:{left:12,right:25,top:22,bottom:20,containLabel:true},
-    xAxis:{type:temporal?'category':'value',data:temporal?values.map(v=>v[0]):undefined,splitLine:{lineStyle:{color:'#edf1e9'}},axisLabel:{fontSize:10,hideOverlap:true}},
-    yAxis:{type:temporal?'value':'category',data:temporal?undefined:values.map(v=>v[0]),axisTick:{show:false},axisLine:{show:false},axisLabel:{width:90,overflow:'truncate',fontSize:10}},
-    series:[{type:temporal?'line':'bar',data:values.map(v=>v[1]),barMaxWidth:16,connectNulls:false,symbolSize:5,itemStyle:{borderRadius:[0,3,3,0],color:colors[i%colors.length]}}]});
+    xAxis:{type:temporal?'category':'value',data:temporal?values.map(v=>v[0]):undefined,splitLine:{lineStyle:{color:chartGrid,type:'dashed'}},axisLabel:{fontSize:11,hideOverlap:true}},
+    yAxis:{type:temporal?'value':'category',data:temporal?undefined:values.map(v=>v[0]),splitLine:{lineStyle:{color:chartGrid,type:'dashed'}},axisTick:{show:false},axisLine:{show:false},axisLabel:{width:90,overflow:'truncate',fontSize:11}},
+    series:[{type:temporal?'line':'bar',data:values.map(v=>v[1]),barMaxWidth:16,connectNulls:false,symbolSize:5,itemStyle:{borderRadius:[0,5,5,0],color:colors[0]},...(temporal?{lineStyle:{width:2},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(40,89,245,.18)'},{offset:1,color:'rgba(40,89,245,0)'}])}}:{})}]});
 }));}
 function bindTableActions(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>tableById(b.dataset.view)?.archived?viewTable(b.dataset.view):openOriginal(b.dataset.view));document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>configureChart(b.dataset.add,b.dataset.metric));}
 async function viewTable(id){const t=tableById(id),data=await tableData(id);state.viewId=id;const fields=t.fields.map(f=>f.name);$('#dialogBody').innerHTML=`<div class="eyebrow">SOURCE / 数据浏览</div><h2>${esc(t.table_name)}</h2><p class="meta">${esc(t.relative_path)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</p><div class="toolbar"><input id="rowSearch" placeholder="筛选当前表的内容"><button id="sourcePreview">查看原表</button><button id="rawButton">修正识别</button><button id="exportTable">导出 CSV</button></div><div class="toolbar"><select id="addMetric" aria-label="选择字段">${options(fields,metricFields(t)[0]?.name)}</select><button class="primary" id="addTableMetric">配置图表 →</button></div><div id="rows"></div><p class="meta" id="rowCount"></p>`;let shown=data.rows;const show=()=>{$('#rows').innerHTML=grid(shown.slice(0,200),['_source_row',...fields]);$('#rowCount').textContent=`共 ${shown.length} 行，预览前 200 行；_source_row 为 Excel 来源行。`;};show();$('#rowSearch').oninput=e=>{shown=data.rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(e.target.value.toLowerCase())));show();};$('#addTableMetric').onclick=()=>configureChart(id,$('#addMetric').value);$('#exportTable').onclick=()=>exportCSV(shown,fields,t.table_name+'.csv');$('#sourcePreview').onclick=()=>openOriginal(id);$('#rawButton').onclick=()=>rawDialog(id);if(!$('#dialog').open)$('#dialog').showModal();}
@@ -235,7 +249,7 @@ function drawComparison(){
   if(type==='table'||!displayCount){$('#compareChart').innerHTML=type==='table'?'':'<div class="empty">'+(errors.length?'部分图表参数需要修正，请查看上方提示。':'选择当前表格与参数，在此预览图表。')+'</div>';return;}
   $('#compareChart').innerHTML='';
   const categoryAxis={type:'category',data:shown,axisLabel:{hideOverlap:true,width:110,overflow:'truncate'},inverse:swapped};
-  const valueAxis={type:'value',splitLine:{lineStyle:{color:'#edf1e9'}}};
+  const valueAxis={type:'value',splitLine:{lineStyle:{color:chartGrid,type:'dashed'}}};
   const series=drawIndexes.map(i=>{const g=groups[i],seriesKeys=type==='facet'?ownShown[i]:shown;return {name:labels[i],type:type==='line'||type==='facet'&&temporalFlags[i]?'line':'bar',data:swapped?seriesKeys.map(k=>[g.get(k)??null,k]):seriesKeys.map(k=>g.get(k)??null),connectNulls:false,barMaxWidth:26,symbolSize:6,lineStyle:{width:2,type:['solid','dashed','dotted'][i%3]},symbol:['circle','rect','triangle','diamond'][i%4]};});
   $('#compareChart').setAttribute?.('aria-label','本页图表系列：'+drawIndexes.map(i=>labels[i]).join('；')+'。全部系列的数值明细可在下方展开查看。');
   let option={tooltip:{trigger:'axis',confine:true},legend:{type:'scroll',top:0,textStyle:{fontSize:11},tooltip:{show:true},formatter:name=>name.length>36?name.slice(0,18)+'…'+name.slice(-16):name},grid:{left:20,right:24,top:50,bottom:38,containLabel:true},xAxis:swapped?valueAxis:categoryAxis,yAxis:swapped?categoryAxis:valueAxis,series};

@@ -1,7 +1,7 @@
 'use strict';
 
-// Desktop controls stay in the narrow rail; on small screens they form one
-// keyboard-accessible drawer, using the same buttons and application state.
+// Desktop controls sit above the content. On small screens the same controls
+// open in a keyboard-accessible panel at the top of the screen.
 (() => {
   const panel=document.querySelector('#workspaceSidebar');
   const toggle=document.querySelector('#menuToggle');

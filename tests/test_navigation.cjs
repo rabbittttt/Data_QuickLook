@@ -11,7 +11,7 @@ vm.runInContext(studio.slice(studio.indexOf('async function dataPage('),studio.i
   for(const mode of ['raw','catalog','health']){context.state.dataView=mode;await context.dataPage(1);assert.equal(calls.pop(),'raw');}
   const html=fs.readFileSync('web/index.html','utf8');
   assert.equal((html.match(/data-page=/g)||[]).length,4);
-  assert.match(html,/<aside\b[^>]*id="workspaceSidebar"[^>]*class="workspace-header"/);
+  assert.match(html,/<header\b[^>]*id="workspaceSidebar"[^>]*class="workspace-header"/);
   assert.equal(html.includes('class="rail"'),false);
   assert.equal(html.includes('mobileSource')||app.includes('mobileSource'),false);
   assert.equal(html.includes('data-page="raw"'),false);
