@@ -2,8 +2,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .streamlit/
-output_file/*.db
-output_file/*.db-journal
 
 # Local business files and generated outputs stay on each computer.
 input_file/
@@ -11,20 +9,31 @@ output_file/
 *.xlsx
 *.xlsm
 *.xls
+*.xlsb
 *.csv
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 *.log
 *.zip
 .env
 .env.*
 *.pem
 *.key
+*.pfx
+*.p12
 .venv/
 venv/
 node_modules/
 .idea/
 .vscode/
 .codex/
+.test_outputs/
 
 # Local update helper.
 update_script.bat
