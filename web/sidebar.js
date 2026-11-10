@@ -36,7 +36,7 @@
   backdrop.addEventListener('click',()=>setOpen(false));
   panel.addEventListener('click',event=>{
     if(!mobile.matches||!open)return;
-    if(event.target.closest('[data-page],.brand')){
+    if(event.target.closest('[data-page],.brand,#allData,#startCompare')){
       setOpen(false,{restoreFocus:false});if(!modalOpen())focusMain();
     }else if(event.target.closest('#sourceButton,#importButton')){
       // A native dialog now owns focus; don't return it to the menu toggle.

@@ -89,6 +89,7 @@ async function refreshSyncProgress(){
 function go(page,{background=false}={}){
   if(page==='raw'||page==='health')page='explore';
   const moved=state.page!==page;state.page=page;location.hash=page;
+  $('#overviewActions').hidden=page!=='home';
   $('#nav').querySelectorAll('button').forEach(b=>{const active=b.dataset.page===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
   const rendering=render(),token=renderToken;
   return rendering.then(()=>{if(!background&&moved&&token===renderToken&&!$('#dialog')?.open){const main=$('#main');main.setAttribute('tabindex','-1');main.focus({preventScroll:true});}}).catch(e=>{if(token!==renderToken)return;console.error('页面加载失败',e);toast(e.message);$('#main').innerHTML=empty('页面暂时无法加载',esc(e.message),'<button onclick="location.reload()">重新加载</button>');});
@@ -152,12 +153,8 @@ const metrics=[
   ['已导入行',tables.reduce((n,t)=>n+t.row_count,0),'包含明细、汇总和辅助区','M4 15V9m4 6V5m4 10v-4m4 4V3'],
 ];
 const cards=recommended.map((t,i)=>`<article class="card"><div class="cardtop"><h3>${esc(metricFields(t)[0].name)} · ${esc(chooseDimension(t))}</h3><span class="tag">${/日期|月份/.test(chooseDimension(t))?'趋势分析':'分类对比'}</span><p title="${esc(t.relative_path)}">${esc(t.file_name)} / ${esc(t.sheet_name)}</p></div><div class="mini-chart" id="mini${i}"></div><div class="cardfoot"><span>${t.row_count} 行 · ${esc(t.range_ref)}</span><button class="link" data-recommend="${t.id}">打开分析 ↗</button></div></article>`).join('');
-$('#main').innerHTML=header('OVERVIEW / 数据概览')+`<div class="stats">${metrics.map(([label,value,sub,icon])=>`<div class="stat"><div class="stat-head"><span>${label}</span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon}"/></svg></div><b>${fmt(value)}</b><span>${sub}</span></div>`).join('')}</div><div class="sectionhead"><div><h2>推荐分析</h2><p>根据字段类型生成起点，可随时调整指标与口径</p></div></div><div class="cards overview-cards">${cards}</div>`+(tables.length?'':empty('连接你的第一份数据','打开数据源设置，填写本地 Excel 文件夹。','<button id="emptySource">连接文件夹</button>'));
-const homeActions=document.createElement('div');
-homeActions.className='home-actions';
-homeActions.innerHTML='<button id="allData">浏览全部数据</button><button id="startCompare" class="primary">＋ 新建对比</button>';
-$('#main .pagehead').append(homeActions);
-$('#startCompare').onclick=()=>go('compare');$('#allData').onclick=()=>go('explore');$('#emptySource')?.addEventListener('click',sourceDialog);document.querySelectorAll('[data-recommend]').forEach(b=>b.onclick=async()=>{configureChart(b.dataset.recommend,metricFields(tableById(b.dataset.recommend))[0].name);});
+$('#main').innerHTML=`<h1 class="overview-heading">数据概览</h1><div class="stats">${metrics.map(([label,value,sub,icon])=>`<div class="stat"><div class="stat-head"><span>${label}</span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon}"/></svg></div><b>${fmt(value)}</b><span>${sub}</span></div>`).join('')}</div><div class="sectionhead"><div><h2>推荐分析</h2><p>根据字段类型生成起点，可随时调整指标与口径</p></div></div><div class="cards overview-cards">${cards}</div>`+(tables.length?'':empty('连接你的第一份数据','打开数据源设置，填写本地 Excel 文件夹。','<button id="emptySource">连接文件夹</button>'));
+$('#emptySource')?.addEventListener('click',sourceDialog);document.querySelectorAll('[data-recommend]').forEach(b=>b.onclick=async()=>{configureChart(b.dataset.recommend,metricFields(tableById(b.dataset.recommend))[0].name);});
 await Promise.all(recommended.map(async(t,i)=>{
   const data=await tableData(t.id);if(token!==renderToken)return;
   const metric=metricFields(t)[0].name,dimension=chooseDimension(t),operation=/率|占比|比例/.test(metric)?'平均值':'求和';
@@ -316,5 +313,7 @@ function sourceDialog(){
     finally{paths.disabled=false;destination.disabled=!enteredFolders().length;save.disabled=!enteredFolders().length;save.textContent='保存并同步';}
   };
 }
+$('#allData').onclick=()=>go('explore');
+$('#startCompare').onclick=()=>go('compare');
 $('#nav').onclick=e=>{const b=e.target.closest('[data-page]');if(b)go(b.dataset.page);};$('#sourceButton').onclick=sourceDialog;$('#syncButton').onclick=async()=>{try{$('#syncButton').disabled=true;await api('sync',{});toast('正在同步新增和变更文件');trackRequestedSync();}catch(e){$('#syncButton').disabled=false;toast(e.message);}};$('#search').oninput=e=>{clearTimeout(searchTimer);state.query=e.target.value.trim();searchTimer=setTimeout(()=>{if(state.query)go('search',{background:true});else go('home',{background:true});},450);};document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){e.preventDefault();$('#search').focus();}});
 window.addEventListener('DOMContentLoaded',async()=>{try{await refreshCatalog();try{state.basket=JSON.parse(localStorage.getItem('shujian-basket')||'[]');}catch{}persistBasket();go(['home','raw','explore','compare','saved','health'].includes(location.hash.slice(1))?location.hash.slice(1):'home');setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{const changed=await refreshCatalog();if(changed)go(state.page,{background:true});}catch(e){$('#syncStatus').textContent='连接中断，请检查本地服务';}finally{pollBusy=false;}},AUTO_REFRESH_INTERVAL);}catch(e){$('#main').innerHTML=empty('数据服务未连接',esc(e.message));}});
