@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from runtime_paths import DATA_DIR_ENV, SOURCE_BASE_ENV, data_dir, external_data_configured
 from source_paths import default_source_directory, source_config, portable_source_config, source_directories
 
 
@@ -17,14 +18,47 @@ class SourcePathTests(unittest.TestCase):
         self.parent = Path(temporary.name)
         self.root = self.parent / "数据速查"
         self.root.mkdir()
-        env = patch.dict(os.environ, {"SHARED_DATA_ROOT": ""})
+        env = patch.dict(os.environ, {"SHARED_DATA_ROOT": "", DATA_DIR_ENV: "", SOURCE_BASE_ENV: ""})
         env.start()
         self.addCleanup(env.stop)
 
     def test_standalone_project_keeps_local_input(self):
+        self.assertFalse(external_data_configured())
+        self.assertEqual(data_dir(self.root), self.root / 'output_file')
         self.assertEqual(source_config(self.root), {
             "folder": str(self.root / "input_file"), "auto": True,
         })
+
+    def test_existing_state_and_relative_sources_survive_two_release_locations(self):
+        state = self.root / 'output_file'
+        state.mkdir()
+        config = state / 'workspace.json'
+        saved = {'folder': 'input_file', 'folders': ['input_file', '../共享数据/订单汇总'], 'auto': False}
+        config.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8')
+        before = config.read_bytes()
+        releases = [self.parent / 'releases' / version / 'payload' for version in ('first', 'second')]
+        with patch.dict(os.environ, {DATA_DIR_ENV: str(state)}):
+            for release in releases:
+                release.mkdir(parents=True)
+                self.assertTrue(external_data_configured())
+                self.assertEqual(data_dir(release), state.resolve())
+                settings = source_config(release)
+                self.assertEqual(source_directories(settings), [
+                    (self.root / 'input_file').resolve(),
+                    (self.parent / '共享数据' / '订单汇总').resolve(),
+                ])
+                self.assertFalse(settings['auto'])
+                self.assertFalse((release / 'output_file').exists())
+        self.assertEqual(config.read_bytes(), before)
+
+    def test_source_base_can_keep_existing_relative_settings_with_a_new_state_location(self):
+        state = self.parent / 'persistent' / 'quicklook'
+        state.mkdir(parents=True)
+        config = state / 'workspace.json'
+        config.write_text(json.dumps({'folder': 'input_file', 'auto': False}), encoding='utf-8')
+        with patch.dict(os.environ, {DATA_DIR_ENV: str(state), SOURCE_BASE_ENV: str(self.root)}):
+            self.assertEqual(source_config(self.parent / 'release')['folder'],
+                             str((self.root / 'input_file').resolve()))
 
     def test_shared_root_keeps_order_summary_as_default_upload(self):
         shared = self.parent / "共享数据"

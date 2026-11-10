@@ -39,6 +39,35 @@
 
 点击左侧“导入文件”，先选择已配置的保存目录，再批量选择 `.xlsx`、`.xlsm`（单个不超过 256 MB）。同一批文件始终保存到所选目录，不会复制到其他数据源。遇到目标目录中的同名文件，会显示文件名、保存目录和新旧文件大小，点击“确认覆盖”后才替换原文件；取消或按 Esc 会跳过该文件并继续导入其他文件。其他目录的同名文件不受影响。若确认期间原文件发生变化，会再次要求确认。文件完整上传并通过读取校验后才替换；上传失败、文件损坏或覆盖失败时保留原文件。逐项显示上传进度及保存、覆盖、跳过、失败结果。完成后自动同步并更新页面，无需手动刷新；后台正在同步时会再安排一轮，确保新文件被扫描。关闭导入窗口可继续使用页面，但上传期间请保持网页打开；遇到同名文件时仍需在确认窗口选择。正在编辑的图表仍保留草稿，通过“载入更新并核对”获取新数据。
 
+## PlanHub 正式发布
+
+从数据速查项目根目录构建版本包。发布目录已存在时，构建会停止，避免覆盖现有版本。
+
+```powershell
+..\.venv\Scripts\python.exe -B scripts/build_release.py --version 2026.11.10.1
+```
+
+默认输出为 `output_file/releases/quicklook-2026.11.10.1`，外层只有 `app-release.json` 和 `payload/`。清单记录每个发布文件的大小及 SHA-256。Python 运行时及其依赖安装在版本目录外，按 `payload/requirements.txt` 安装。
+
+沿用原数据时，先停止旧实例并备份原状态目录。下面从数据速查原项目根目录执行，直接指向已有的 `output_file`。发布目录放到其他位置时，将 `$release` 改为实际发布包路径。
+
+```powershell
+$release = (Resolve-Path './output_file/releases/quicklook-2026.11.10.1').Path
+$python = (Resolve-Path '../.venv/Scripts/python.exe').Path
+$env:DATA_QUICKLOOK_DATA_DIR = (Resolve-Path './output_file').Path
+$env:DATA_QUICKLOOK_SOURCE_BASE = (Get-Location).Path
+$env:DATA_QUICKLOOK_PUBLIC_PREFIX = '/quicklook/'
+$env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
+& $python -m pip install -r (Join-Path $release 'payload/requirements.txt')
+& $python -B -u (Join-Path $release 'payload/server.py') --port 8765
+```
+
+- `DATA_QUICKLOOK_DATA_DIR` 保存 `warehouse.db`、`workspace.json` 和 `recognition.json`。新版本直接读取同一目录，跳过旧版启动时的数据源重定位。需要搬动状态文件时，由操作人员离线备份和复制，程序启动时不会搬运旧文件。Excel 仍在工作区配置的源目录，上传也写入该源目录。版本切换时让旧实例退出后再启动新实例。
+- 工作区设置里的相对数据源路径按 `DATA_QUICKLOOK_SOURCE_BASE` 解析。复用原 `output_file` 时，默认基准是其父目录。若将状态文件手动放到别处，设置原项目目录为基准，或在工作区设置中使用稳定的绝对路径。生产环境建议为数据目录与基准目录提供绝对路径。独立开发可直接使用现有启动脚本，未配置时沿用项目内 `output_file` 与根路径 `/`。
+- 门户固定入口为 `/quicklook/`，整个子树代理到本机服务 `127.0.0.1:8765`。代理保留或剥离前缀均可，须保留查询参数、请求方法、上传正文和内容长度。导入上限为 256 MiB。CSV 和图表图片由浏览器根据已加载的数据生成。
+- 将 `DATA_QUICKLOOK_PUBLIC_ORIGIN` 替换为实际门户的协议、域名及非默认端口。HTTPS 终止或后端 Host 被改写时需要该值，来源校验仍按精确匹配执行。健康检查使用后端 `GET /healthz` 或门户 `GET /quicklook/healthz`，返回 `{"ok":true,"app":"quicklook"}`。
+- 门户侧只需确认固定入口、通用前缀代理、上传限制和健康探针。后续升级时切换服务指向新版 `payload/server.py`，沿用原持久目录、监听端口和公共前缀，然后重启数据速查。新增前缀内接口不需要另加代理规则。
+
 ## 查看原始数据
 
 在“数据管理”选择文件、Sheet 和“此 Sheet 已识别区域”。选择具体区域时仅展示该区域，选择“整个 Sheet”查看原始单元格；支持行列分页和跳转。

@@ -11,10 +11,12 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
+from runtime_paths import data_dir
+
 
 SUPPORTED_SUFFIXES = {".xlsx", ".xlsm"}
 PARSER_VERSION = 'hierarchy-time-v2'
-OVERRIDES = Path(__file__).resolve().parent / 'output_file' / 'recognition.json'
+OVERRIDES = data_dir(Path(__file__).resolve().parent) / 'recognition.json'
 
 
 @dataclass

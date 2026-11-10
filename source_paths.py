@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+from runtime_paths import data_dir, source_base
+
 
 def resolve_source_path(root, value):
     path = Path(value).expanduser()
@@ -52,7 +54,8 @@ def source_directories(settings):
 
 def source_config(root, config_file=None):
     root = Path(root)
-    config_file = resolve_source_path(root, config_file) if config_file is not None else root / "output_file" / "workspace.json"
+    config_file = resolve_source_path(root, config_file) if config_file is not None else data_dir(root) / "workspace.json"
+    root = source_base(root)
     if config_file.exists():
         saved = json.loads(config_file.read_text(encoding="utf-8"))
         if 'folders' in saved:

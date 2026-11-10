@@ -2,7 +2,7 @@
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs, parse_qsl, urlencode, unquote
+from urllib.parse import urlparse, urlsplit, parse_qs, parse_qsl, quote, urlencode, unquote
 from dataclasses import asdict
 from html import escape, unescape
 from io import BytesIO
@@ -20,13 +20,38 @@ import pandas as pd
 from openpyxl import load_workbook
 from warehouse import Warehouse, scan_source_files
 from source_paths import source_config, resolve_source_path, portable_source_config, source_directories, shared_data_root
+from runtime_paths import data_dir, external_data_configured, source_base
+
+
+def public_prefix(value):
+    parts = value.strip().strip('/').split('/')
+    if parts == ['']:
+        return '/'
+    if any(not re.fullmatch(r'[A-Za-z0-9_-]+', part) for part in parts):
+        raise ValueError('DATA_QUICKLOOK_PUBLIC_PREFIX 需要由字母、数字、下划线或连字符组成的路径')
+    return '/' + '/'.join(parts) + '/'
+
+
+def public_origin(value):
+    if not value:
+        return None
+    url = urlsplit(value)
+    if (url.scheme not in ('http', 'https') or not url.hostname or url.username is not None
+            or url.path not in ('', '/') or url.query or url.fragment
+            or any(char.isspace() for char in value)):
+        raise ValueError('DATA_QUICKLOOK_PUBLIC_ORIGIN 需要完整的 HTTP(S) 来源，不包含路径')
+    url.port  # Validate an explicitly configured port.
+    return f'{url.scheme}://{url.netloc}'
 
 ROOT = Path(__file__).resolve().parent
-STORE = Warehouse(ROOT / 'output_file' / 'warehouse.db')
+PUBLIC_PREFIX = public_prefix(os.environ.get('DATA_QUICKLOOK_PUBLIC_PREFIX', '/'))
+PUBLIC_ORIGIN = public_origin(os.environ.get('DATA_QUICKLOOK_PUBLIC_ORIGIN', ''))
+DATA_DIR = data_dir(ROOT)
+STORE = Warehouse(DATA_DIR / 'warehouse.db')
 LOCK = threading.RLock()
 SYNC_LOCK = threading.Lock()
 STATUS = {'busy': False, 'errors': [], 'last_sync': None}
-CONFIG = ROOT / 'output_file' / 'workspace.json'
+CONFIG = DATA_DIR / 'workspace.json'
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 
@@ -99,7 +124,7 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
     folder = Path(expected_folder).resolve() if expected_folder else None
     if folder not in source_directories(config()):
         raise ValueError('数据源目录已变更或未配置，请重新打开导入窗口')
-    if folder == (ROOT / 'input_file').resolve():
+    if folder == (source_base(ROOT) / 'input_file').resolve():
         folder.mkdir(exist_ok=True)
     if not folder.is_dir():
         raise ValueError('数据源目录不存在，请在“管理数据源”中重新选择')
@@ -258,6 +283,27 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / 'web'), **kwargs)
 
+    def redirect_path(self, path, query):
+        self.send_response(307)
+        self.send_header('Location', path + ('?' + query if query else ''))
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        # The same handler serves both a prefix-preserving proxy and a proxy
+        # which has already removed the public mount point.
+        if PUBLIC_PREFIX != '/':
+            url = urlsplit(self.path)
+            mount = PUBLIC_PREFIX.rstrip('/')
+            if url.path == mount:
+                self.redirect_path(PUBLIC_PREFIX, url.query)
+                return False
+            if url.path.startswith(PUBLIC_PREFIX):
+                self.path = url.path[len(mount):] + ('?' + url.query if url.query else '')
+        return True
+
     def versioned_html(self, path, body):
         root = (ROOT / 'web').resolve()
         versions = {}
@@ -267,24 +313,36 @@ class Handler(SimpleHTTPRequestHandler):
             if url.scheme or url.netloc or not url.path:
                 return match[0]
             base = root if url.path.startswith('/') else path.parent
-            asset = (base / unquote(url.path).lstrip('/')).resolve()
+            resource_path = url.path
+            if PUBLIC_PREFIX != '/' and resource_path.startswith(PUBLIC_PREFIX):
+                resource_path = '/' + resource_path.removeprefix(PUBLIC_PREFIX)
+            asset = (base / unquote(resource_path).lstrip('/')).resolve()
             if not asset.is_relative_to(root) or not asset.is_file():
                 return match[0]
             if asset not in versions:
                 versions[asset] = hashlib.sha256(asset.read_bytes()).hexdigest()[:16]
             query = [(key, value) for key, value in parse_qsl(url.query) if key != 'v']
             query.append(('v', versions[asset]))
-            versioned = url._replace(query=urlencode(query)).geturl()
+            if PUBLIC_PREFIX != '/':
+                resource_path = PUBLIC_PREFIX + quote(asset.relative_to(root).as_posix(), safe='/')
+            versioned = url._replace(path=resource_path, query=urlencode(query)).geturl()
             return match['prefix'] + escape(versioned, quote=True) + match['quote']
 
-        return re.sub(r'(?P<prefix>\b(?:src|href)=(?P<quote>[\"\x27]))(?P<url>[^\"\x27]+)(?P=quote)',
-                      version_asset, body.decode('utf-8')).encode('utf-8')
+        html = re.sub(r'(?P<prefix>\b(?:src|href)=(?P<quote>[\"\x27]))(?P<url>[^\"\x27]+)(?P=quote)',
+                      version_asset, body.decode('utf-8'))
+        if PUBLIC_PREFIX != '/':
+            html = re.sub(r'<head\b[^>]*>', lambda match: match[0] +
+                          f'\n<meta name="quicklook-base" content="{PUBLIC_PREFIX}">',
+                          html, count=1, flags=re.IGNORECASE)
+        return html.encode('utf-8')
 
     def send_head(self):
         path = Path(self.translate_path(self.path))
         if path.is_dir():
-            if not urlparse(self.path).path.endswith('/'):
-                return super().send_head()
+            url = urlsplit(self.path)
+            if not url.path.endswith('/'):
+                self.redirect_path(PUBLIC_PREFIX + url.path.lstrip('/') + '/', url.query)
+                return None
             path = path / 'index.html'
         if not path.is_file():
             return super().send_head()
@@ -330,6 +388,8 @@ class Handler(SimpleHTTPRequestHandler):
         parts = urlparse(self.path)
         query = parse_qs(parts.query)
         try:
+            if parts.path == '/healthz':
+                return self.send_json({'ok': True, 'app': 'quicklook'})
             if parts.path == '/api/catalog':
                 return self.send_json({'tables': catalog(), 'files': workbook_list(), 'status': STATUS, 'config': config()})
             if parts.path == '/api/table':
@@ -381,7 +441,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         # Non-simple content types + same origin; listen exclusively on loopback.
-        if self.headers.get('Origin') and self.headers['Origin'] != 'http://' + self.headers.get('Host', ''):
+        origin = self.headers.get('Origin')
+        if origin and origin not in ('http://' + self.headers.get('Host', ''), PUBLIC_ORIGIN):
             return self.send_json({'error': '来源不匹配'}, 403)
         if urlparse(self.path).path == '/api/import':
             try:
@@ -414,8 +475,9 @@ class Handler(SimpleHTTPRequestHandler):
                 raw_sources = payload.get('folders', [payload.get('folder', '')])
                 if not isinstance(raw_sources, list) or not raw_sources or any(not isinstance(p, str) or not p.strip() for p in raw_sources):
                     raise ValueError('请至少填写一个数据源目录，每行一个路径')
-                sources = source_directories({'folder': raw_sources[0], 'folders': [resolve_source_path(ROOT, p.strip()) for p in raw_sources]})
-                folder = resolve_source_path(ROOT, payload.get('folder') or sources[0]).resolve()
+                base = source_base(ROOT)
+                sources = source_directories({'folder': raw_sources[0], 'folders': [resolve_source_path(base, p.strip()) for p in raw_sources]})
+                folder = resolve_source_path(base, payload.get('folder') or sources[0]).resolve()
                 if folder not in sources:
                     raise ValueError('默认导入目录必须是已配置的数据源之一')
                 for source in sources:
@@ -423,7 +485,7 @@ class Handler(SimpleHTTPRequestHandler):
                         raise ValueError(f'文件夹不存在：{source}')
                 with LOCK:
                     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-                    saved = portable_source_config(ROOT, folder, payload.get('auto', True), sources if 'folders' in payload else None)
+                    saved = portable_source_config(base, folder, payload.get('auto', True), sources if 'folders' in payload else None)
                     CONFIG.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8')
                 request_sync()
                 return self.send_json({'saved': True})
@@ -455,7 +517,7 @@ def watch():
         time.sleep(60)
 
 
-WORKBENCH_URL = 'http://127.0.0.1:8765'
+DEFAULT_PORT = 8765
 APP_TITLE = '数据速查'
 
 
@@ -468,19 +530,19 @@ class WorkbenchHTTPServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-def open_workbench():
+def open_workbench(url):
     try:
-        if webbrowser.open(WORKBENCH_URL, new=2):
+        if webbrowser.open(url, new=2):
             return
     except webbrowser.Error:
         pass
-    print(f'未能自动打开浏览器，请手动访问 {WORKBENCH_URL}', flush=True)
+    print(f'未能自动打开浏览器，请手动访问 {url}', flush=True)
 
 
-def workbench_running():
-    connection = HTTPConnection('127.0.0.1', 8765, timeout=2)
+def workbench_running(port=DEFAULT_PORT):
+    connection = HTTPConnection('127.0.0.1', port, timeout=2)
     try:
-        connection.request('GET', '/')
+        connection.request('GET', PUBLIC_PREFIX)
         response = connection.getresponse()
         page = response.read(16384)
         titles = (APP_TITLE, '数据速查 · Data QuickLook', 'Excel 数据查询与图表分析', '数见 · 经营数据工作台')
@@ -491,25 +553,26 @@ def workbench_running():
         connection.close()
 
 
-def run_server(open_browser=False):
+def run_server(open_browser=False, port=DEFAULT_PORT):
+    url = f'http://127.0.0.1:{port}{PUBLIC_PREFIX}'
     try:
-        httpd = WorkbenchHTTPServer(('127.0.0.1', 8765), Handler)
+        httpd = WorkbenchHTTPServer(('127.0.0.1', port), Handler)
     except OSError:
-        if open_browser and workbench_running():
+        if open_browser and workbench_running(port):
             print('数据速查已经运行，正在打开现有页面。', flush=True)
-            open_workbench()
+            open_workbench(url)
             return
         raise
     with httpd:
-        shared = shared_data_root(ROOT)
+        shared = shared_data_root(source_base(ROOT)) if not external_data_configured() and PUBLIC_PREFIX == '/' else None
         if shared is not None:
             STORE.relocate_shared_sources(shared, active_sources=source_directories(config()),
-                                          rules_path=ROOT / 'output_file' / 'recognition.json', dry_run=False)
+                                          rules_path=DATA_DIR / 'recognition.json', dry_run=False)
         threading.Thread(target=watch, daemon=True).start()
-        print(f'{APP_TITLE}: {WORKBENCH_URL}', flush=True)
+        print(f'{APP_TITLE}: {url}', flush=True)
         if open_browser:
             # The listening socket is ready before the browser can request the page.
-            threading.Thread(target=open_workbench, daemon=True).start()
+            threading.Thread(target=open_workbench, args=(url,), daemon=True).start()
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -519,4 +582,8 @@ def run_server(open_browser=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=APP_TITLE)
     parser.add_argument('--open-browser', action='store_true', help='服务启动后自动打开浏览器')
-    run_server(open_browser=parser.parse_args().open_browser)
+    parser.add_argument('--port', type=int, default=DEFAULT_PORT, help='本地监听端口，默认 %(default)s')
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error('--port 必须在 1–65535 之间')
+    run_server(open_browser=args.open_browser, port=args.port)

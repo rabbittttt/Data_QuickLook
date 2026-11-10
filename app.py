@@ -10,13 +10,16 @@ import streamlit as st
 from analysis_engine import apply_filters, dimension_candidates, interpret_question, numeric_candidates, summarize
 from warehouse import Warehouse
 from comparison import render_comparison
-from source_paths import source_config, source_directories, shared_data_root
+from runtime_paths import data_dir, external_data_configured, source_base
+from source_paths import resolve_source_path, source_config, source_directories, shared_data_root
 
 
 ROOT = Path(__file__).resolve().parent
+SOURCE_BASE = source_base(ROOT)
+DATA_DIR = data_dir(ROOT)
 SOURCE_SETTINGS = source_config(ROOT)
 DEFAULT_SOURCES = SOURCE_SETTINGS.get('folders', [SOURCE_SETTINGS['folder']])
-DATABASE = ROOT / "output_file" / "warehouse.db"
+DATABASE = DATA_DIR / "warehouse.db"
 
 st.set_page_config(page_title="数据速查", page_icon=":material/bar_chart:", layout="wide")
 
@@ -44,10 +47,11 @@ st.markdown(
 @st.cache_resource
 def warehouse() -> Warehouse:
     store = Warehouse(DATABASE)
-    shared = shared_data_root(ROOT)
-    if shared is not None:
-        store.relocate_shared_sources(shared, active_sources=source_directories(SOURCE_SETTINGS),
-                                      rules_path=ROOT / 'output_file' / 'recognition.json', dry_run=False)
+    if not external_data_configured():
+        shared = shared_data_root(SOURCE_BASE)
+        if shared is not None:
+            store.relocate_shared_sources(shared, active_sources=source_directories(SOURCE_SETTINGS),
+                                          rules_path=DATA_DIR / 'recognition.json', dry_run=False)
     return store
 
 
@@ -77,7 +81,7 @@ store = warehouse()
 with st.sidebar:
     st.subheader("数据源")
     source_text = st.text_area("Excel 数据源（每行一个目录）", value='\n'.join(DEFAULT_SOURCES), help="同时扫描多个目录及其子目录中的 .xlsx 和 .xlsm；相对路径按本项目目录解析")
-    folders = [str((ROOT / Path(p.strip()).expanduser()).resolve()) for p in source_text.splitlines() if p.strip()]
+    folders = [str(resolve_source_path(SOURCE_BASE, p.strip()).resolve()) for p in source_text.splitlines() if p.strip()]
     st.caption('递归读取新增及变更文件；读取失败保留上次数据。移走的文件仍保留历史数据。')
     if st.button("同步新增和变更文件", type="primary", width="stretch"):
         with st.spinner("正在识别 Excel 中的数据表…"):

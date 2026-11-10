@@ -84,7 +84,7 @@
       const xhr=new XMLHttpRequest();
       const params=new URLSearchParams({filename:file.name,folder:targetFolder});
       if(replaceVersion)params.set('replace_version',replaceVersion);
-      xhr.open('POST','/api/import?'+params);
+      xhr.open('POST',apiUrl('import?'+params));
       xhr.setRequestHeader('Content-Type','application/octet-stream');
       xhr.timeout=180000;
       xhr.upload.onprogress=event=>{
