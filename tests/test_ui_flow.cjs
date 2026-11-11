@@ -175,7 +175,7 @@ test('live search and clearing the query keep focus in the search input',async()
 test('truncated search results disclose the shown count and a way to narrow results',async()=>{
   const $=nodes(),headings=[];let count=77;
   const c=vm.createContext({$,state:{query:'SKU'},renderToken:1,header:(_eyebrow,_title,subtitle)=>{headings.push(subtitle);return subtitle;},api:async()=>({hits:Array.from({length:count},(_,id)=>({table:{id,table_name:'SKU',relative_path:'source.xlsx',sheet_name:'Sheet1',range_ref:'A1:B3',fields:[]},rows:[]}))}),esc:String,fmt:String,empty:()=>'',bindTableActions:()=>{}});
-  vm.runInContext(snippet('async function search(', 'function sourceDialog('),c);
+  vm.runInContext(snippet('async function search(', "$('#allData').onclick"),c);
   await c.search(1);assert.match(headings.at(-1),/77.*当前显示前 60.*缩小关键词/);assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,60);
   count=2;await c.search(1);assert.doesNotMatch(headings.at(-1),/前 60/);assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,2);
 });

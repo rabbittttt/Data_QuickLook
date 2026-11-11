@@ -68,15 +68,17 @@ class MultiSourceHTTPTests(unittest.TestCase):
             'auto': False,
         }, ensure_ascii=False), encoding='utf-8')
         self.store = Warehouse(self.config_file.parent / 'test.db')
+        self.store.sync([self.local, self.shared])
         self.status = {'busy': False, 'errors': [], 'last_sync': None}
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(server, 'ROOT', self.project))
         self.stack.enter_context(patch.object(server, 'CONFIG', self.config_file))
         self.stack.enter_context(patch.object(server, 'STORE', self.store))
+        self.stack.enter_context(patch.object(server, 'DATA_DIR', self.config_file.parent))
         self.stack.enter_context(patch.object(server, 'STATUS', self.status))
         self.stack.enter_context(patch.object(server, 'LOCK', threading.RLock()))
         self.stack.enter_context(patch.object(server, 'SYNC_LOCK', threading.Lock()))
-        self.stack.enter_context(patch.dict(os.environ, {'SHARED_DATA_ROOT': ''}))
+        self.stack.enter_context(patch.dict(os.environ, {'SHARED_DATA_ROOT': '', 'DATA_QUICKLOOK_SOURCE_BASE': str(self.project)}))
         self.httpd = ThreadingHTTPServer(('127.0.0.1', 0), QuietHandler)
         self.worker = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.worker.start()
@@ -154,83 +156,34 @@ class MultiSourceHTTPTests(unittest.TestCase):
             self.assertEqual(data['rows'][0]['销量'],
                              expected_values[Path(table['file_path']).parent])
 
-    def test_config_saves_portable_multi_sources_and_selected_import_destination(self):
-        code, result = self.post_json('config', {
-            'folder': '../共享数据/订单汇总',
-            'folders': ['input_file', '../共享数据/订单汇总'], 'auto': False,
-        })
-        self.assertEqual(code, 200, result)
-        wait_until(lambda: not self.status['busy'])
-        saved = json.loads(self.config_file.read_text(encoding='utf-8'))
-        self.assertEqual(saved['folder'], '../共享数据/订单汇总')
-        self.assertEqual(set(saved['folders']), {'input_file', '../共享数据/订单汇总'})
-        self.assertFalse(saved['auto'])
-        code, catalog = self.request('catalog')
-        self.assertEqual(code, 200, catalog)
-        self.assertEqual(catalog['config']['folder'], str(self.shared))
-        self.assertEqual(set(catalog['config']['folders']), {str(self.local), str(self.shared)})
+    def test_directly_placed_files_are_not_discovered_by_refresh(self):
+        (self.local / '未上传.xlsx').write_bytes(workbook_bytes(333))
+        uploads = self.config_file.parent / 'uploads'
+        uploads.mkdir()
+        (uploads / '未上传.xlsx').write_bytes(workbook_bytes(444))
+        catalog = self.sync()
         self.assertEqual(len(catalog['files']), 2)
+        self.assertEqual(len(catalog['tables']), 2)
 
-    def test_invalid_config_cannot_save_missing_source_or_unlisted_import_destination(self):
-        before = self.config_file.read_bytes()
-        invalid = [
-            {'folders': [], 'folder': str(self.local)},
-            {'folders': [str(self.local), str(self.parent / '不存在')], 'folder': str(self.local)},
-            {'folders': [str(self.local)], 'folder': str(self.outside)},
-        ]
-        for payload in invalid:
-            with self.subTest(payload=payload):
-                code, result = self.post_json('config', payload)
-                self.assertEqual(code, 400, result)
-                self.assertIn('error', result)
-                self.assertEqual(self.config_file.read_bytes(), before)
-
-    def test_import_only_overwrites_the_selected_source_after_confirmation(self):
-        before = self.sync()
-        shared_table = next(table for table in before['tables']
-                            if Path(table['file_path']).parent == self.shared)
-        code, conflict = self.upload(self.shared)
-        self.assertEqual(code, 409, conflict)
-        self.assertTrue(conflict['overwrite_required'])
-        self.assertEqual((self.shared / '同名.xlsx').read_bytes(), self.shared_content)
-        code, result = self.upload(self.shared, replace_version=conflict['version'])
+    def test_managed_upload_survives_reopening_database_and_preserves_legacy(self):
+        uploads = self.config_file.parent / 'uploads'
+        code, result = self.upload(uploads)
         self.assertEqual(code, 201, result)
-        self.assertTrue(result['overwritten'])
-        self.assertEqual((self.local / '同名.xlsx').read_bytes(), self.local_content)
-        after = self.sync()
-        self.assertEqual(after['status']['errors'], [])
-        self.assertEqual(len(after['files']), 2)
-        code, data = self.request('table', id=shared_table['id'])
-        self.assertEqual(code, 200, data)
-        self.assertEqual(data['rows'][0]['销量'], 999)
-        self.assertEqual((self.local / '同名.xlsx').read_bytes(), self.local_content)
-
-    def test_import_rejects_unconfigured_folder_without_touching_files(self):
-        code, result = self.upload(self.outside, name='不应保存.xlsx')
-        self.assertEqual(code, 400, result)
-        self.assertIn('error', result)
-        self.assertEqual(list(self.outside.iterdir()), [])
-        self.assertEqual((self.local / '同名.xlsx').read_bytes(), self.local_content)
-        self.assertEqual((self.shared / '同名.xlsx').read_bytes(), self.shared_content)
-
-    def test_removing_one_source_archives_only_its_history_and_preserves_other_source(self):
-        before = self.sync()
-        code, result = self.post_json('config', {'folder': str(self.local), 'auto': False})
-        self.assertEqual(code, 200, result)
         wait_until(lambda: not self.status['busy'])
-        code, after = self.request('catalog')
-        self.assertEqual(code, 200, after)
-        self.assertEqual(len(after['files']), 1)
-        self.assertEqual(Path(after['files'][0]['path']).parent, self.local)
-        self.assertEqual({table['id'] for table in after['tables']},
-                         {table['id'] for table in before['tables']})
-        for table in after['tables']:
-            self.assertEqual(table['archived'], Path(table['file_path']).parent == self.shared)
-        old_file = next(file for file in before['files'] if Path(file['path']).parent == self.shared)
-        code, result = self.request('workbook', id=old_file['id'])
-        self.assertEqual(code, 400, result)
+        reopened = Warehouse(self.store.path)
+        self.assertEqual(reopened.uploaded_files(), [uploads / '同名.xlsx'])
+        with patch.object(server, 'STORE', reopened):
+            catalog = self.sync()
+            self.assertEqual(len(catalog['tables']), 3)
+            self.assertEqual(len(catalog['files']), 3)
+        self.assertEqual((self.local / '同名.xlsx').read_bytes(), self.local_content)
         self.assertEqual((self.shared / '同名.xlsx').read_bytes(), self.shared_content)
 
-
-if __name__ == '__main__':
-    unittest.main()
+    def test_old_source_upload_and_configuration_are_rejected(self):
+        before = self.config_file.read_bytes()
+        code, _ = self.post_json('config', {'folder': str(self.outside)})
+        self.assertEqual(code, 404)
+        code, _ = self.upload(self.shared)
+        self.assertEqual(code, 400)
+        self.assertEqual(self.config_file.read_bytes(), before)
+        self.assertEqual((self.shared / '同名.xlsx').read_bytes(), self.shared_content)

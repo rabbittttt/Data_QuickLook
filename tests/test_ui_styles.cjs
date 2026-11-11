@@ -46,7 +46,7 @@ assert.match(mobile,/padding:12px max\(12px,env\(safe-area-inset-right\)\) calc\
 
 const sidebar=html.match(/<header\b[^>]*\bid="workspaceSidebar"[^>]*>([\s\S]*?)<\/header>/)?.[1];
 assert.ok(sidebar,'navigation and data operations have one semantic header');
-for(const id of ['nav','search','syncStatus','importButton','syncButton','sourceButton','tableCount','basketCount']){
+for(const id of ['nav','search','syncStatus','importButton','syncButton','tableCount','basketCount']){
   assert.match(sidebar,new RegExp('\\bid="'+id+'"'),`${id} remains inside the top navigation`);
   assert.equal((html.match(new RegExp('\\bid="'+id+'"','g'))||[]).length,1,`${id} has one entry point`);
 }

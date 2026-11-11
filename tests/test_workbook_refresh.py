@@ -32,6 +32,7 @@ class WorkbookRefreshTests(unittest.TestCase):
             cache.append(['M9', 60])
             book.save(path)
             store = Warehouse(root / 'test.db')
+            store.register_upload(path)
             status = {'busy': False, 'errors': [], 'last_sync': None}
             with patch.object(server, 'STORE', store), patch.object(server, 'STATUS', status), \
                     patch.object(server, 'config', return_value={'folder': str(root), 'auto': True}):

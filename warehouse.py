@@ -97,6 +97,7 @@ class Warehouse:
                 );
                 CREATE INDEX IF NOT EXISTS idx_datasets_file ON datasets(file_name);
                 CREATE TABLE IF NOT EXISTS file_versions (path TEXT PRIMARY KEY, signature TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS uploaded_files (path TEXT PRIMARY KEY);
                 """
             )
 
@@ -115,6 +116,18 @@ class Warehouse:
 
     def sync(self, folder: str | Path | Iterable[str | Path], force: bool = False) -> ScanResult:
         files, errors = scan_source_files(folder)
+        return self.sync_files(files, force=force, errors=errors)
+
+    def register_upload(self, path: Path) -> None:
+        with self.connect() as connection:
+            connection.execute('INSERT OR IGNORE INTO uploaded_files VALUES (?)', (str(path.resolve()),))
+
+    def uploaded_files(self) -> list[Path]:
+        with self.connect() as connection:
+            return [Path(row['path']) for row in connection.execute('SELECT path FROM uploaded_files ORDER BY path')]
+
+    def sync_files(self, files: list[Path], force: bool = False, errors=None) -> ScanResult:
+        errors = list(errors or [])
         for file_path in files:
             try:
                 stat = file_path.stat()

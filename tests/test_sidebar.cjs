@@ -140,7 +140,7 @@ test('navigation and the current route close the drawer and focus main',()=>{
 });
 
 test('source and import dialogs own focus after the drawer closes',()=>{
-  for(const [entry,dialog,button] of [['sourceButton','dialog','modalButton'],['importButton','importDialog','importDone']]){
+  for(const [entry,dialog,button] of [['importButton','importDialog','importDone']]){
     const ui=setup();ui.click(ui.toggle);ui.click(ui[entry]);
     assert.equal(ui.panel.inert,true,entry);assert.equal(ui[dialog].open,true,entry);
     assert.equal(ui.document.activeElement,ui[button],entry);
@@ -163,11 +163,11 @@ test('mobile search shortcut opens the drawer and reaches the search input',()=>
 });
 
 test('a native modal keeps slash and Escape away from drawer shortcuts',()=>{
-  const ui=setup();ui.click(ui.toggle);ui.click(ui.sourceButton);
+  const ui=setup();ui.click(ui.toggle);ui.click(ui.importButton);
   const slash=ui.key('/');assert.equal(slash.defaultPrevented,false);
-  assert.equal(ui.legacyShortcuts.length,0);assert.equal(ui.document.activeElement,ui.modalButton);
+  assert.equal(ui.legacyShortcuts.length,0);assert.equal(ui.document.activeElement,ui.importDone);
   assert.equal(ui.key('Escape').defaultPrevented,false,'native dialog owns Escape');
-  assert.equal(ui.document.activeElement,ui.modalButton);assert.equal(ui.panel.inert,true);
+  assert.equal(ui.document.activeElement,ui.importDone);assert.equal(ui.panel.inert,true);
 });
 
 test('Enter searches immediately, cancels debounce and closes the mobile drawer',()=>{

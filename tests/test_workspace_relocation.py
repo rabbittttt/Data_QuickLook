@@ -272,7 +272,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
 
             class FakeThread:
                 def __init__(self, *, target, daemon):
-                    assert target is server.watch and daemon is True
+                    raise AssertionError('startup must not start a background watcher')
                     events.append('thread-created')
                 def start(self):
                     events.append('watch-start')
@@ -300,17 +300,17 @@ class WorkspaceRelocationTests(unittest.TestCase):
                     assert events == ['bind'], events
                 else:
                     server.run_server()
-                    migration.assert_called_once()
-                    assert events == ['bind', 'relocate', 'thread-created', 'watch-start', 'serve'], events
+                    migration.assert_not_called()
+                    assert events == ['bind', 'serve'], events
         ''')
         environment = {**os.environ, 'PYTHONPATH': '', 'SHARED_DATA_ROOT': '../共享数据',
-                       'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUTF8': '1'}
+                       'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUTF8': '1', 'DATA_QUICKLOOK_DATA_DIR': '', 'DATA_QUICKLOOK_SOURCE_BASE': ''}
         result = subprocess.run([sys.executable, '-B', '-c', script, 'fail' if bind_fails else 'success'],
                                 cwd=project, env=environment, capture_output=True,
                                 text=True, encoding='utf-8', timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_server_migrates_after_binding_and_before_starting_watch(self):
+    def test_server_starts_without_migration_or_background_watch(self):
         self.check_server_startup_in_isolated_copy(bind_fails=False)
 
     def test_server_binding_failure_does_not_migrate_or_start_watch(self):

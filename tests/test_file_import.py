@@ -59,6 +59,7 @@ class FileImportHTTPTests(unittest.TestCase):
         self.status = {'busy': False, 'errors': [], 'last_sync': None}
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(server, 'STORE', self.store))
+        self.stack.enter_context(patch.object(server, 'DATA_DIR', self.root))
         self.stack.enter_context(patch.object(server, 'STATUS', self.status))
         self.stack.enter_context(patch.object(server, 'LOCK', threading.RLock()))
         self.stack.enter_context(patch.object(server, 'SYNC_LOCK', threading.Lock()))
@@ -92,21 +93,10 @@ class FileImportHTTPTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_config_endpoint_saves_workspace_source_relative_to_project(self):
-        project = self.root / '数据速查'
-        config_file = project / 'output_file' / 'workspace.json'
-        config_file.parent.mkdir(parents=True)
-        shared = self.root / '共享数据' / '订单汇总'
-        shared.mkdir(parents=True)
-        with patch.object(server, 'ROOT', project), patch.object(server, 'CONFIG', config_file), \
-             patch.object(server, 'request_sync'):
-            status, result = self.request('config', method='POST',
-                body=json.dumps({'folder': '../共享数据/订单汇总', 'auto': False}).encode(),
-                headers={'Content-Type': 'application/json'})
-        self.assertEqual(status, 200, result)
-        self.assertEqual(json.loads(config_file.read_text(encoding='utf-8')),
-                         {'folder': '../共享数据/订单汇总', 'auto': False})
-        self.assertEqual(source_config(project)['folder'], str(shared.resolve()))
+    def test_config_endpoint_rejects_local_folder_configuration(self):
+        code, result = self.request('config', method='POST', body=b'{"folder":"input_file"}',
+                                    headers={'Content-Type': 'application/json'})
+        self.assertEqual(code, 404, result)
 
     def upload(self, name='销量.xlsx', content=None, *, folder=None, headers=None,
                replace_version=None):
@@ -128,8 +118,8 @@ class FileImportHTTPTests(unittest.TestCase):
                 self.assertEqual(code, 201, result)
                 self.assertEqual(result, {'saved': True, 'name': name, 'overwritten': False})
                 self.assertEqual((self.folder / name).read_bytes(), self.content)
-        self.assertTrue(self.store.catalog().empty, 'upload itself must not start a scan')
-        self.assertFalse(self.status['busy'])
+        wait_until(lambda: not self.status['busy'])
+        self.assertEqual(len(self.store.catalog()), 3, 'upload starts processing without a second API call')
 
         code, started = self.request('sync', method='POST', body=b'{}',
                                      headers={'Content-Type': 'application/json'})
@@ -197,8 +187,9 @@ class FileImportHTTPTests(unittest.TestCase):
         self.assertEqual(result, {'saved': True, 'name': '销量.xlsx', 'overwritten': True})
         self.assertEqual((self.folder / '销量.xlsx').read_bytes(), incoming)
         self.assertEqual([path.name for path in self.folder.iterdir()], ['销量.xlsx'])
+        wait_until(lambda: not self.status['busy'])
         code, data = self.request('table', id=table_id)
-        self.assertEqual(data['rows'][0]['销量'], 100, 'replacement does not bypass batch sync')
+        self.assertEqual(data['rows'][0]['销量'], 999, 'confirmed upload triggers processing automatically')
 
         code, _ = self.request('sync', method='POST', body=b'{}',
                                headers={'Content-Type': 'application/json'})
@@ -294,18 +285,13 @@ class FileImportHTTPTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), self.content)
         self.assertEqual([path.name for path in self.folder.iterdir()], ['销量.xlsx'])
 
-    def test_first_import_creates_default_folder_but_not_a_missing_custom_source(self):
-        default = self.root / 'input_file'
-        with patch.object(server, 'ROOT', self.root), patch.object(server, 'config', return_value={
-                'folder': str(default), 'auto': False}):
-            code, result = self.upload(folder=default)
-            self.assertEqual(code, 201, result)
-            self.assertEqual((default / '销量.xlsx').read_bytes(), self.content)
-        missing = self.root / 'removed-custom-source'
-        with patch.object(server, 'config', return_value={'folder': str(missing), 'auto': False}):
-            code, result = self.upload(folder=missing)
-            self.assertEqual(code, 400, result)
-            self.assertFalse(missing.exists())
+    def test_first_import_creates_managed_folder_without_client_path(self):
+        self.folder.rmdir()
+        code, result = self.request('import', method='POST', body=self.content,
+            headers={'Content-Type': 'application/octet-stream'}, filename='销量.xlsx')
+        self.assertEqual(code, 201, result)
+        self.assertEqual((self.folder / '销量.xlsx').read_bytes(), self.content)
+
     def test_invalid_windows_names_and_unsupported_formats_leave_no_files(self):
         invalid_names = [
             '', '../outside.xlsx', '..\\outside.xlsx', 'C:\\outside.xlsx',
@@ -382,7 +368,7 @@ class FileImportHTTPTests(unittest.TestCase):
                 raise AssertionError('Test did not release the scan')
             return ScanResult(files=index + 1, tables=index + 1, rows=2, errors=[])
 
-        with patch.object(self.store, 'sync', side_effect=controlled_sync):
+        with patch.object(self.store, 'sync_files', side_effect=controlled_sync):
             try:
                 server.request_sync()
                 self.assertTrue(entered[0].wait(5))
@@ -394,7 +380,7 @@ class FileImportHTTPTests(unittest.TestCase):
                 self.assertTrue(self.status['busy'], 'the second scan must not appear completed')
                 release[1].set()
                 wait_until(lambda: not self.status['busy'])
-                self.assertEqual(calls, [str(self.folder), str(self.folder)])
+                self.assertEqual(calls, [[], []])
                 self.assertEqual(self.status['errors'], [])
                 self.assertEqual(self.status['files'], 2)
             finally:

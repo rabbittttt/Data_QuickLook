@@ -18,9 +18,9 @@ import tempfile
 import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
-from warehouse import Warehouse, scan_source_files
-from source_paths import source_config, resolve_source_path, portable_source_config, source_directories, shared_data_root
-from runtime_paths import data_dir, external_data_configured, source_base
+from warehouse import Warehouse
+from source_paths import source_config, source_directories
+from runtime_paths import data_dir
 
 
 def public_prefix(value):
@@ -56,7 +56,14 @@ MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 
 def config():
-    return source_config(ROOT, CONFIG)
+    settings = source_config(ROOT, CONFIG)
+    folders = source_directories(settings)
+    uploads = (DATA_DIR / 'uploads').resolve()
+    return {
+        **settings, 'folder': str(uploads),
+        'folders': [str(path) for path in dict.fromkeys([uploads, *folders])],
+        'auto': False,
+    }
 
 
 def claim_sync():
@@ -72,9 +79,7 @@ def sync_worker():
     while True:
         try:
             with LOCK:
-                settings = config()
-                sources = source_directories(settings)
-                result = STORE.sync(sources if 'folders' in settings else settings['folder'])
+                result = STORE.sync_files(STORE.uploaded_files())
             STATUS.update(asdict(result), last_sync=time.strftime('%Y-%m-%d %H:%M:%S'))
         except Exception as exc:
             STATUS['errors'] = [str(exc)]
@@ -110,7 +115,7 @@ class ImportConflict(ValueError):
         super().__init__(self.payload['error'])
 
 
-def import_workbook(stream, name, size, expected_folder, replace_version=''):
+def import_workbook(stream, name, size, expected_folder='', replace_version=''):
     """Store the original bytes; incomplete uploads never become scanned workbooks."""
     if (not name or len(name) > 240 or name.endswith((' ', '.'))
             or re.search(r'[<>:"/\\|?*\x00-\x1f]', name)
@@ -121,13 +126,10 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
         raise ValueError('仅支持 .xlsx 和 .xlsm；旧版 .xls 请先另存为 .xlsx')
     if size <= 0:
         raise ValueError('文件为空或缺少文件长度')
-    folder = Path(expected_folder).resolve() if expected_folder else None
-    if folder not in source_directories(config()):
-        raise ValueError('数据源目录已变更或未配置，请重新打开导入窗口')
-    if folder == (source_base(ROOT) / 'input_file').resolve():
-        folder.mkdir(exist_ok=True)
-    if not folder.is_dir():
-        raise ValueError('数据源目录不存在，请在“管理数据源”中重新选择')
+    folder = (DATA_DIR / 'uploads').resolve()
+    if expected_folder and Path(expected_folder).resolve() != folder:
+        raise ValueError('文件统一由系统保存，请刷新页面后重新导入')
+    folder.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=folder, prefix='.import-', suffix='.part', delete=False) as output:
@@ -154,8 +156,6 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
         except Exception as exc:
             raise ValueError('无法读取此 Excel，文件可能损坏或已加密，请用 Excel 打开后另存再导入') from exc
         with LOCK:
-            if folder not in source_directories(config()):
-                raise ValueError('上传期间数据源目录已变更，请重新打开导入窗口')
             destination = folder / name
             if destination.is_symlink() or destination.exists() and not destination.is_file():
                 raise ValueError('同名目标不是普通文件，请先在数据源文件夹中检查')
@@ -180,6 +180,8 @@ def import_workbook(stream, name, size, expected_folder, replace_version=''):
                         os.link(temporary, destination)
                 except FileExistsError:
                     raise ImportConflict(destination)
+            STORE.register_upload(destination)
+        request_sync()
         return {'saved': True, 'name': destination.name, 'overwritten': overwritten}
     finally:
         if temporary is not None:
@@ -226,9 +228,9 @@ def source_file_label(path, source, sources):
 
 
 def workbook_files():
-    # Sync reports unavailable roots; browsing still lists every healthy source.
-    paths, _ = scan_source_files(source_directories(config()))
-    return {hashlib.sha256(str(path).encode()).hexdigest()[:24]: path for path in paths}
+    # Only published uploads and previously indexed workbooks are visible.
+    paths = {Path(path) for path in STORE.catalog().file_path} | set(STORE.uploaded_files())
+    return {hashlib.sha256(str(path).encode()).hexdigest()[:24]: path for path in paths if path.is_file()}
 
 
 def workbook_list():
@@ -240,7 +242,7 @@ def workbook_list():
         except OSError:
             continue
         source = containing_source(path, sources)
-        files.append(dict(id=key, name=source_file_label(path, source, sources), path=str(path), source_folder=str(source),
+        files.append(dict(id=key, name=source_file_label(path, source, sources) if source else str(path), path=str(path), source_folder=str(source) if source else None,
                           signature=f'{stat.st_mtime_ns}:{stat.st_size}'))
     return files
 
@@ -471,24 +473,6 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == '/api/sync':
                 request_sync()
                 return self.send_json({'started': True})
-            if self.path == '/api/config':
-                raw_sources = payload.get('folders', [payload.get('folder', '')])
-                if not isinstance(raw_sources, list) or not raw_sources or any(not isinstance(p, str) or not p.strip() for p in raw_sources):
-                    raise ValueError('请至少填写一个数据源目录，每行一个路径')
-                base = source_base(ROOT)
-                sources = source_directories({'folder': raw_sources[0], 'folders': [resolve_source_path(base, p.strip()) for p in raw_sources]})
-                folder = resolve_source_path(base, payload.get('folder') or sources[0]).resolve()
-                if folder not in sources:
-                    raise ValueError('默认导入目录必须是已配置的数据源之一')
-                for source in sources:
-                    if not source.is_dir():
-                        raise ValueError(f'文件夹不存在：{source}')
-                with LOCK:
-                    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-                    saved = portable_source_config(base, folder, payload.get('auto', True), sources if 'folders' in payload else None)
-                    CONFIG.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8')
-                request_sync()
-                return self.send_json({'saved': True})
             if self.path == '/api/recognition':
                 from excel_parser import discover_tables, OVERRIDES
                 table = next(t for t in catalog() if t['id'] == payload['id'])
@@ -508,13 +492,6 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json({'error': '接口不存在'}, 404)
         except Exception as exc:
             self.send_json({'error': str(exc)}, 400)
-
-
-def watch():
-    while True:
-        if config().get('auto', True):
-            sync()
-        time.sleep(60)
 
 
 DEFAULT_PORT = 8765
@@ -564,11 +541,6 @@ def run_server(open_browser=False, port=DEFAULT_PORT):
             return
         raise
     with httpd:
-        shared = shared_data_root(source_base(ROOT)) if not external_data_configured() and PUBLIC_PREFIX == '/' else None
-        if shared is not None:
-            STORE.relocate_shared_sources(shared, active_sources=source_directories(config()),
-                                          rules_path=DATA_DIR / 'recognition.json', dry_run=False)
-        threading.Thread(target=watch, daemon=True).start()
         print(f'{APP_TITLE}: {url}', flush=True)
         if open_browser:
             # The listening socket is ready before the browser can request the page.
