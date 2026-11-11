@@ -163,6 +163,8 @@ button.link{min-height:32px;padding:4px 6px}
 .nav-icon{width:17px;height:17px;flex:0 0 17px;fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round}
 #nav button[aria-current=page]::before{content:'';position:absolute;inset:auto 10px -7px;height:2px;border-radius:4px;background:var(--primary)}
 .sidebar-data-actions{grid-area:actions;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+.sync-meta{display:flex;flex-direction:column;gap:1px;min-width:0}
+.refresh-period{font-size:11px;line-height:1.5;color:var(--muted)}
 #syncStatus{display:block;max-width:115px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
 .workspace-header .top-actions,.overview-actions:not([hidden]){display:flex;flex-wrap:wrap;gap:6px}
 .workspace-header .top-actions{margin:0}
