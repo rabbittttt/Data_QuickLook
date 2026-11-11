@@ -18,6 +18,7 @@ RUNTIME_FILES = (
     "excel_parser.py",
     "runtime_paths.py",
     "server.py",
+    "shared_sync.py",
     "source_paths.py",
     "warehouse.py",
     "workspace_relocation.py",

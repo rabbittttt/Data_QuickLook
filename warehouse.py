@@ -24,6 +24,11 @@ class ScanResult:
     errors: list[str]
 
 
+def file_signature(path: Path) -> str:
+    stat = path.stat()
+    return f"{stat.st_mtime_ns}:{stat.st_size}:{PARSER_VERSION}"
+
+
 def scan_source_files(folder: str | Path | Iterable[str | Path]) -> tuple[list[Path], list[str]]:
     """Scan several roots once; an unavailable root does not hide healthy ones."""
     single_source = isinstance(folder, (str, Path))
@@ -126,20 +131,24 @@ class Warehouse:
         with self.connect() as connection:
             return [Path(row['path']) for row in connection.execute('SELECT path FROM uploaded_files ORDER BY path')]
 
-    def sync_files(self, files: list[Path], force: bool = False, errors=None) -> ScanResult:
+    def file_versions(self) -> dict[str, str]:
+        with self.connect() as connection:
+            return dict(connection.execute('SELECT path, signature FROM file_versions'))
+
+    def sync_files(self, files: list[Path], force: bool = False, errors=None, expected_signatures=None) -> ScanResult:
         errors = list(errors or [])
         for file_path in files:
             try:
-                stat = file_path.stat()
-                signature = f"{stat.st_mtime_ns}:{stat.st_size}:{PARSER_VERSION}"
+                signature = file_signature(file_path)
+                if expected_signatures and file_path in expected_signatures and signature != expected_signatures[file_path]:
+                    raise ValueError('文件在稳定检查后又发生变化，等待下一次检查')
                 with self.connect() as connection:
                     previous = connection.execute('SELECT signature FROM file_versions WHERE path=?', (str(file_path),)).fetchone()
                 if not force and previous and previous[0] == signature:
                     continue
                 notices = []
                 tables = discover_tables(file_path, notices=notices)
-                after = file_path.stat()
-                if signature != f"{after.st_mtime_ns}:{after.st_size}:{PARSER_VERSION}":
+                if signature != file_signature(file_path):
                     raise ValueError('文件正在保存，下次刷新重试')
                 if not tables:
                     raise ValueError('未发现可识别表格，保留上次导入数据')

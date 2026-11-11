@@ -19,8 +19,9 @@ import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
 from warehouse import Warehouse
-from source_paths import source_config, source_directories
-from runtime_paths import data_dir
+from source_paths import source_config, source_directories, shared_data_root
+from runtime_paths import data_dir, source_base
+from shared_sync import SharedFileMonitor
 
 
 def public_prefix(value):
@@ -50,6 +51,7 @@ DATA_DIR = data_dir(ROOT)
 STORE = Warehouse(DATA_DIR / 'warehouse.db')
 LOCK = threading.RLock()
 SYNC_LOCK = threading.Lock()
+SHARED_PENDING = {}
 STATUS = {'busy': False, 'errors': [], 'last_sync': None}
 CONFIG = DATA_DIR / 'workspace.json'
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
@@ -57,7 +59,7 @@ MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 def config():
     settings = source_config(ROOT, CONFIG)
-    folders = source_directories(settings)
+    folders = [*source_directories(settings), *shared_sources()]
     uploads = (DATA_DIR / 'uploads').resolve()
     return {
         **settings, 'folder': str(uploads),
@@ -66,8 +68,9 @@ def config():
     }
 
 
-def claim_sync():
+def claim_sync(shared_versions=None):
     with SYNC_LOCK:
+        SHARED_PENDING.update(shared_versions or {})
         if STATUS['busy']:
             STATUS['pending'] = True
             return False
@@ -78,8 +81,13 @@ def claim_sync():
 def sync_worker():
     while True:
         try:
+            with SYNC_LOCK:
+                shared_versions = dict(SHARED_PENDING)
+                SHARED_PENDING.clear()
             with LOCK:
-                result = STORE.sync_files(STORE.uploaded_files())
+                files = list(dict.fromkeys([*STORE.uploaded_files(), *shared_versions]))
+                options = {'expected_signatures': shared_versions} if shared_versions else {}
+                result = STORE.sync_files(files, **options)
             STATUS.update(asdict(result), last_sync=time.strftime('%Y-%m-%d %H:%M:%S'))
         except Exception as exc:
             STATUS['errors'] = [str(exc)]
@@ -96,9 +104,28 @@ def sync():
         sync_worker()
 
 
-def request_sync():
-    if claim_sync():
+def request_sync(shared_versions=None):
+    if claim_sync(shared_versions):
         threading.Thread(target=sync_worker, daemon=True).start()
+
+
+def shared_sources():
+    root = shared_data_root(source_base(ROOT))
+    return [root] if root is not None else []
+
+
+def watch_shared(stop):
+    monitor = SharedFileMonitor(shared_sources, STORE.file_versions)
+    while not stop.is_set():
+        try:
+            ready, delay = monitor.check()
+            STATUS['shared_errors'] = list(monitor.errors)
+            if ready:
+                request_sync(ready)
+        except Exception as exc:
+            STATUS['shared_errors'] = [str(exc)]
+            delay = 60
+        stop.wait(delay)
 
 
 class ImportConflict(ValueError):
@@ -393,7 +420,8 @@ class Handler(SimpleHTTPRequestHandler):
             if parts.path == '/healthz':
                 return self.send_json({'ok': True, 'app': 'quicklook'})
             if parts.path == '/api/catalog':
-                return self.send_json({'tables': catalog(), 'files': workbook_list(), 'status': STATUS, 'config': config()})
+                status = {**STATUS, 'errors': STATUS['errors'] + STATUS.get('shared_errors', [])}
+                return self.send_json({'tables': catalog(), 'files': workbook_list(), 'status': status, 'config': config()})
             if parts.path == '/api/table':
                 return self.send_json(data(query['id'][0]))
             if parts.path == '/api/workbooks':
@@ -541,6 +569,8 @@ def run_server(open_browser=False, port=DEFAULT_PORT):
             return
         raise
     with httpd:
+        stop = threading.Event()
+        threading.Thread(target=watch_shared, args=(stop,), daemon=True).start()
         print(f'{APP_TITLE}: {url}', flush=True)
         if open_browser:
             # The listening socket is ready before the browser can request the page.
@@ -549,6 +579,8 @@ def run_server(open_browser=False, port=DEFAULT_PORT):
             httpd.serve_forever()
         except KeyboardInterrupt:
             pass
+        finally:
+            stop.set()
 
 
 if __name__ == '__main__':
