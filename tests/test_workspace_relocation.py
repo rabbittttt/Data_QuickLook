@@ -259,7 +259,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
             class FakeServer:
                 def __init__(self, address, handler):
                     events.append('bind')
-                    assert address == ('127.0.0.1', 8765)
+                    assert address == ('127.0.0.1', 9473)
                     assert handler is server.Handler
                     if bind_fails:
                         raise OSError('fixture port unavailable')

@@ -1,4 +1,4 @@
-"""Local data workspace. Run: python server.py (http://127.0.0.1:8765)."""
+"""Local data workspace. Run: python server.py (http://127.0.0.1:9473)."""
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
@@ -522,7 +522,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json({'error': str(exc)}, 400)
 
 
-DEFAULT_PORT = 8765
+DEFAULT_PORT = 9473
 APP_TITLE = '数据速查'
 
 

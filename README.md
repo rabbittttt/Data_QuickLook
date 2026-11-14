@@ -19,7 +19,7 @@
 
 `启动数据速查.cmd` 从脚本所在目录向上找到最近名为 `Project` 的目录，固定使用其中 `.venv\Scripts\python.exe`，忽略子项目自己的 `.venv`，也不回退 PATH 或 Codex Python。可用 `DATA_QUICKLOOK_PYTHON` 显式指定其他解释器文件；相对路径按本项目目录解析。启动窗口显示所选 Python，并在环境缺失或依赖不全时停止，提示初始化或安装命令。
 
-也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:8765)；命令行使用 `..\.venv\Scripts\python.exe server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:8765`。
+也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:9473)；命令行使用 `..\.venv\Scripts\python.exe server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:9473`。
 
 更新代码后普通刷新网页即可检查新版页面、样式、脚本和图标：静态资源按文件内容自动生成版本号，未变化的内容仍可复用缓存。若更新包含 `server.py` 等 Python 后端代码，需先重启服务（本次缓存策略更新也需要重启一次）。已打开的页面不会自动重载，以保留正在编辑的内容；“同步数据”仍只负责 Excel 数据更新。
 
@@ -53,12 +53,12 @@ $env:DATA_QUICKLOOK_SOURCE_BASE = (Get-Location).Path
 $env:DATA_QUICKLOOK_PUBLIC_PREFIX = '/quicklook/'
 $env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
 & $python -m pip install -r (Join-Path $release 'payload/requirements.txt')
-& $python -B -u (Join-Path $release 'payload/server.py') --port 8765
+& $python -B -u (Join-Path $release 'payload/server.py') --port 9473
 ```
 
 - `DATA_QUICKLOOK_DATA_DIR` 保存 `warehouse.db`、`workspace.json` 和 `recognition.json`。新版本直接读取同一目录，跳过旧版启动时的数据源重定位。需要搬动状态文件时，由操作人员离线备份和复制，程序启动时不会搬运旧文件。新上传的 Excel 位于持久目录的 `uploads/`，旧来源文件保持原位置。版本切换时让旧实例退出后再启动新实例。
 - 工作区设置里的相对数据源路径按 `DATA_QUICKLOOK_SOURCE_BASE` 解析。复用原 `output_file` 时，默认基准是其父目录。若将状态文件手动放到别处，设置原项目目录为基准，或在工作区设置中使用稳定的绝对路径。生产环境建议为数据目录与基准目录提供绝对路径。独立开发可直接使用现有启动脚本，未配置时沿用项目内 `output_file` 与根路径 `/`。
-- 门户固定入口为 `/quicklook/`，整个子树代理到本机服务 `127.0.0.1:8765`。代理保留或剥离前缀均可，须保留查询参数、请求方法、上传正文和内容长度。导入上限为 256 MiB。CSV 和图表图片由浏览器根据已加载的数据生成。
+- 门户固定入口为 `/quicklook/`，整个子树代理到本机服务 `127.0.0.1:9473`。代理保留或剥离前缀均可，须保留查询参数、请求方法、上传正文和内容长度。导入上限为 256 MiB。CSV 和图表图片由浏览器根据已加载的数据生成。
 - 将 `DATA_QUICKLOOK_PUBLIC_ORIGIN` 替换为实际门户的协议、域名及非默认端口。HTTPS 终止或后端 Host 被改写时需要该值，来源校验仍按精确匹配执行。健康检查使用后端 `GET /healthz` 或门户 `GET /quicklook/healthz`，返回 `{"ok":true,"app":"quicklook"}`。
 - 门户侧只需确认固定入口、通用前缀代理、上传限制和健康探针。后续升级时切换服务指向新版 `payload/server.py`，沿用原持久目录、监听端口和公共前缀，然后重启数据速查。新增前缀内接口不需要另加代理规则。
 
