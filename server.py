@@ -571,6 +571,7 @@ def run_server(open_browser=False, port=DEFAULT_PORT):
     with httpd:
         stop = threading.Event()
         threading.Thread(target=watch_shared, args=(stop,), daemon=True).start()
+        request_sync()  # Recheck persisted uploads with this parser version on every startup.
         print(f'{APP_TITLE}: {url}', flush=True)
         if open_browser:
             # The listening socket is ready before the browser can request the page.

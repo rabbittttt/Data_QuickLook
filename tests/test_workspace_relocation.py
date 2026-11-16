@@ -239,6 +239,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
         project.mkdir()
         for source in Path(__file__).resolve().parents[1].glob('*.py'):
             shutil.copy2(source, project / source.name)
+        shutil.copy2(Path(__file__).resolve().parents[1] / 'requirements.txt', project / 'requirements.txt')
         shared = self.root / '共享数据'
         shared.mkdir()
         script = textwrap.dedent('''
@@ -289,6 +290,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
             with patch.object(server, 'WorkbenchHTTPServer', FakeServer), \\
                  patch.object(server.threading, 'Thread', FakeThread), \\
                  patch.object(server.STORE, 'relocate_shared_sources', side_effect=relocate) as migration, \\
+                 patch.object(server, 'request_sync', side_effect=lambda: events.append('upload-sync')), \\
                  patch('builtins.print'):
                 if bind_fails:
                     try:
@@ -302,7 +304,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
                 else:
                     server.run_server()
                     migration.assert_not_called()
-                    assert events == ['bind', 'thread-created', 'watch-start', 'serve'], events
+                    assert events == ['bind', 'thread-created', 'watch-start', 'upload-sync', 'serve'], events
         ''')
         environment = {**os.environ, 'PYTHONPATH': '', 'SHARED_DATA_ROOT': '../共享数据',
                        'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUTF8': '1', 'DATA_QUICKLOOK_DATA_DIR': '', 'DATA_QUICKLOOK_SOURCE_BASE': ''}

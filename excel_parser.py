@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import hashlib
 import json
 from typing import Any, Iterable
 from datetime import date, datetime
@@ -15,7 +16,18 @@ from runtime_paths import data_dir
 
 
 SUPPORTED_SUFFIXES = {".xlsx", ".xlsm"}
-PARSER_VERSION = 'hierarchy-time-v2'
+def parser_revision(root=None):
+    """Stable across relocation; changes with parsing/storage code and dependencies."""
+    root = Path(root or Path(__file__).resolve().parent)
+    digest = hashlib.sha256()
+    for name in ('excel_parser.py', 'warehouse.py', 'runtime_paths.py', 'requirements.txt'):
+        digest.update(name.encode('utf-8') + b'\0')
+        digest.update(hashlib.sha256((root / name).read_bytes()).digest())
+    return digest.hexdigest()
+
+
+# Freeze the version with the imported parser. Restart loads new code and version together.
+PARSER_VERSION = parser_revision()
 OVERRIDES = data_dir(Path(__file__).resolve().parent) / 'recognition.json'
 
 

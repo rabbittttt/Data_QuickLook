@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from openpyxl import Workbook
 
+from excel_parser import parser_revision
 from shared_sync import SharedFileMonitor
 from warehouse import Warehouse, discover_tables, file_signature, scan_source_files
 
@@ -33,6 +34,41 @@ class SharedSyncTests(unittest.TestCase):
     def check(self, now):
         self.now = now
         return self.monitor.check()
+
+    def test_parser_upgrade_reimports_unchanged_shared_file_and_preserves_on_failure(self):
+        self.store.sync_files([self.path])
+        original=self.path.read_bytes()
+        old_versions=self.store.file_versions()
+        with patch('warehouse.PARSER_VERSION','new-parser-version'):
+            self.assertEqual(self.check(0),({},60))
+            ready,_=self.check(60)
+            self.assertIn(self.path,ready)
+            with patch('warehouse.discover_tables',side_effect=ValueError('new parser failed')):
+                result=self.store.sync_files(list(ready),expected_signatures=ready)
+            self.assertTrue(result.errors)
+            self.assertEqual(self.store.file_versions(),old_versions)
+            self.assertEqual(self.store.load(self.store.catalog().iloc[0].id).iloc[0]['Sales'],100)
+            with patch('warehouse.discover_tables',wraps=discover_tables) as parse:
+                self.assertFalse(self.store.sync_files([self.path]).errors)
+                self.assertEqual(parse.call_count,1)
+                self.store.sync_files([self.path])
+                self.assertEqual(parse.call_count,1,'Same parser and input must reuse the successful import')
+        self.assertEqual(self.path.read_bytes(),original)
+
+    def test_parser_fingerprint_tracks_content_and_ignores_runtime_data(self):
+        source=self.root/'source';source.mkdir()
+        names=('excel_parser.py','warehouse.py','runtime_paths.py','requirements.txt')
+        for name in names:(source/name).write_text('v1')
+        original=parser_revision(source)
+        (source/'warehouse.db').write_bytes(b'private fixture')
+        self.assertEqual(parser_revision(source),original)
+        import shutil
+        moved=self.root/'moved';shutil.copytree(source,moved)
+        self.assertEqual(parser_revision(moved),original)
+        for name in names:
+            (moved/name).write_text('v2')
+            self.assertNotEqual(parser_revision(moved),original)
+            (moved/name).write_text('v1')
 
     def test_five_minute_scan_and_one_minute_confirmation_are_separate(self):
         with patch('shared_sync.scan_source_files', wraps=scan_source_files) as scan:
