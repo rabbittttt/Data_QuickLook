@@ -127,7 +127,7 @@ button.link{min-height:32px;padding:4px 6px}
 .charttools label{font-size:13px}
 #facetControls{align-items:center;gap:8px}
 #facetControls .meta{margin:0}
-.catalog-update{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;margin:0 0 14px;border:1px solid #cfe5d7;border-left:3px solid var(--primary);border-radius:8px;background:#eff8f2;color:#20683d;font-size:13px;overflow-wrap:anywhere}
+.catalog-update{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;margin:0 0 14px;border:1px solid #cfe5d7;border-radius:8px;background:#eff8f2;color:#20683d;font-size:13px;overflow-wrap:anywhere}
 .catalog-update p{margin:0}
 .catalog-update button{flex-shrink:0}
 .skip-link{position:fixed;top:8px;left:12px;z-index:100;padding:10px 14px;border-radius:8px;background:#fff;color:var(--primary);transform:translateY(-160%)}

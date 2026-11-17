@@ -97,7 +97,7 @@ async function chartStudio(token){
   manager.innerHTML='<summary>管理已应用系列 <span class="meta">编辑 / 移除 · '+state.basket.length+' 条</span></summary>';
   manager.ontoggle=()=>{state.seriesManagerOpen=manager.open;};
   const ribbon=document.createElement('div');ribbon.className='series-ribbon'+(state.basket.length>8?' many-series':'');ribbon.setAttribute('aria-label','已应用系列，较多时可滚动查看和编辑');
-  ribbon.innerHTML=state.basket.map((s,i)=>'<div class="series-chip"><button class="series-edit" data-edit-uid="'+esc(s.uid)+'" style="border-left-color:'+colors[i%colors.length]+'">'+(i+1)+'. '+esc(s.label)+' · 编辑</button><button class="series-remove" data-remove-uid="'+esc(s.uid)+'" aria-label="移除第 '+(i+1)+' 组">×</button></div>').join('')||'<p class="meta">还没有已应用系列，请先选择数据生成图表。</p>';
+  ribbon.innerHTML=state.basket.map((s,i)=>'<div class="series-chip"><button class="series-edit" data-edit-uid="'+esc(s.uid)+'">'+(i+1)+'. '+esc(s.label)+' · 编辑</button><button class="series-remove" data-remove-uid="'+esc(s.uid)+'" aria-label="移除第 '+(i+1)+' 组">×</button></div>').join('')||'<p class="meta">还没有已应用系列，请先选择数据生成图表。</p>';
   manager.append(ribbon);settingsCard.append(manager);
   const builder=document.createElement('details');builder.id='studioBuilderShell';builder.className='studio-builder studio-builder-primary';builder.open=!!state.openBuilder||!state.basket.length||!!draft.editUid||!!draft.previewActive||!!state.builderOpen;
   builder.ontoggle=()=>{state.builderOpen=builder.open;};
