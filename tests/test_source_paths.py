@@ -15,7 +15,7 @@ class SourcePathTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.parent = Path(temporary.name)
+        self.parent = Path(temporary.name).resolve()
         self.root = self.parent / "数据速查"
         self.root.mkdir()
         env = patch.dict(os.environ, {"SHARED_DATA_ROOT": "", DATA_DIR_ENV: "", SOURCE_BASE_ENV: ""})
@@ -24,7 +24,7 @@ class SourcePathTests(unittest.TestCase):
 
     def test_standalone_project_keeps_local_input(self):
         self.assertFalse(external_data_configured())
-        self.assertEqual(data_dir(self.root), self.root / 'output_file')
+        self.assertEqual(data_dir(self.root), self.parent / '工作台数据' / 'database' / 'quicklook')
         self.assertEqual(source_config(self.root), {
             "folder": str(self.root / "input_file"), "auto": True,
         })
@@ -82,7 +82,7 @@ class SourcePathTests(unittest.TestCase):
         saved = portable_source_config(self.root, local, False, [shared, local, local])
         self.assertEqual(saved, {'folder': 'input_file', 'folders': ['../共享数据/SOP计划', 'input_file'], 'auto': False})
         moved = self.parent / 'relocated' / '数据速查'
-        config_file = moved / 'output_file' / 'workspace.json'
+        config_file = data_dir(moved) / 'workspace.json'
         config_file.parent.mkdir(parents=True)
         config_file.write_text(json.dumps(saved), encoding='utf-8')
         settings = source_config(moved)
@@ -114,8 +114,8 @@ class SourcePathTests(unittest.TestCase):
     def test_saved_source_wins_over_shared_default_and_environment(self):
         shared = self.parent / "共享数据"
         shared.mkdir()
-        workspace = self.root / "output_file" / "workspace.json"
-        workspace.parent.mkdir()
+        workspace = data_dir(self.root) / "workspace.json"
+        workspace.parent.mkdir(parents=True)
         saved = {"folder": str(self.parent / "用户选择的来源"), "auto": False}
         workspace.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
         with patch.dict(os.environ, {"SHARED_DATA_ROOT": str(shared)}):
@@ -129,8 +129,8 @@ class SourcePathTests(unittest.TestCase):
         self.assertEqual(source_config(self.root, workspace), saved)
 
     def test_relative_shared_root_and_saved_source_ignore_current_directory(self):
-        workspace = self.root / 'output_file' / 'workspace.json'
-        workspace.parent.mkdir()
+        workspace = data_dir(self.root) / 'workspace.json'
+        workspace.parent.mkdir(parents=True)
         workspace.write_text(json.dumps({'folder': '../共享数据/订单汇总', 'auto': False}), encoding='utf-8')
         previous = Path.cwd()
         try:
@@ -147,7 +147,7 @@ class SourcePathTests(unittest.TestCase):
         self.assertEqual(saved, {'folder': '../共享数据/订单汇总', 'auto': False})
         self.assertEqual(portable_source_config(self.root, self.root / 'input_file')['folder'], 'input_file')
         moved_root = self.parent / 'relocated-workspace' / '数据速查'
-        workspace = moved_root / 'output_file' / 'workspace.json'
+        workspace = data_dir(moved_root) / 'workspace.json'
         workspace.parent.mkdir(parents=True)
         workspace.write_text(json.dumps(saved), encoding='utf-8')
         self.assertEqual(source_config(moved_root)['folder'], str(moved_root.parent.resolve() / '共享数据' / '订单汇总'))

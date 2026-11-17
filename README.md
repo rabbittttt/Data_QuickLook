@@ -1,5 +1,7 @@
 # 数据速查 · Data QuickLook
 
+持久目录统一为同级工作区的 `工作台数据/database/quicklook/`；独立运行与门户运行读取同一位置。可用 `PLANHUB_DATA_ROOT` 指定数据根（相对路径按应用根解析），应用原有显式数据目录参数继续优先。程序发布不携带业务数据库；发布版使用 `planhub-runtime/database/quicklook/`。共享 Excel 仍在原共享目录，数据库集中不改变业务口径。首次升级必须停服迁移，旧目录改名为 `.pre-central-*` 恢复备份，不再参与运行。
+
 > 此公开仓库只保存程序代码；`input_file`、`output_file`、数据库、日志和压缩包不会上传。换电脑后需要自行安全迁移业务 Excel。下载代码可运行 `git clone https://github.com/rabbittttt/Data_QuickLook.git`，以后在仓库目录运行 `git pull` 更新。
 
 通过网页导入 Excel 的数据查询与图表分析工具。主入口为独立网页：数据概览、数据管理、图表展示、收藏的分析。读取和分析不会修改原始 Excel。

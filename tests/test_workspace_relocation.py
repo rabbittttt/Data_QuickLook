@@ -250,7 +250,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
 
             # Import constructs a Warehouse, so import only the disposable copy.
             assert server.ROOT == Path.cwd().resolve()
-            assert server.STORE.path.is_relative_to(server.ROOT)
+            assert server.STORE.path == server.ROOT.parent / '工作台数据' / 'database' / 'quicklook' / 'warehouse.db'
             bind_fails = sys.argv[1] == 'fail'
             shared = server.ROOT.parent / '共享数据'
             expected_sources = [shared / name for name in ('订单汇总', '原始销量', '车型信息', 'SOP计划')]

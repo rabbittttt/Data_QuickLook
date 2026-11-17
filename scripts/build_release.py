@@ -12,6 +12,7 @@ import stat
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_FILES = (
+    "scripts/migrate_storage.py",
     "analysis_engine.py",
     "app.py",
     "comparison.py",

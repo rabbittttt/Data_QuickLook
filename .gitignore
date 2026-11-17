@@ -37,3 +37,6 @@ node_modules/
 
 # Local update helper.
 update_script.bat
+
+# Offline storage migration recovery copies.
+*.pre-central-*/
