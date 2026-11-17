@@ -33,7 +33,7 @@ class SourcePathTests(unittest.TestCase):
         state = self.root / 'output_file'
         state.mkdir()
         config = state / 'workspace.json'
-        saved = {'folder': 'input_file', 'folders': ['input_file', '../共享数据/订单汇总'], 'auto': False}
+        saved = {'folder': 'input_file', 'folders': ['input_file', '../工作台数据/shared/订单汇总'], 'auto': False}
         config.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8')
         before = config.read_bytes()
         releases = [self.parent / 'releases' / version / 'payload' for version in ('first', 'second')]
@@ -45,7 +45,7 @@ class SourcePathTests(unittest.TestCase):
                 settings = source_config(release)
                 self.assertEqual(source_directories(settings), [
                     (self.root / 'input_file').resolve(),
-                    (self.parent / '共享数据' / '订单汇总').resolve(),
+                    (self.parent / '工作台数据' / 'shared' / '订单汇总').resolve(),
                 ])
                 self.assertFalse(settings['auto'])
                 self.assertFalse((release / 'output_file').exists())
@@ -61,14 +61,14 @@ class SourcePathTests(unittest.TestCase):
                              str((self.root / 'input_file').resolve()))
 
     def test_shared_root_keeps_order_summary_as_default_upload(self):
-        shared = self.parent / "共享数据"
+        shared = self.parent / "工作台数据" / "shared"
         for category in ("原始销量", "订单汇总", "车型信息"):
             (shared / category).mkdir(parents=True)
         self.assertEqual(default_source_directory(self.root), shared / "订单汇总")
 
     def test_shared_defaults_include_all_categories_and_local_input(self):
-        shared = self.parent / '共享数据'
-        shared.mkdir()
+        shared = self.parent / '工作台数据' / 'shared'
+        shared.mkdir(parents=True)
         settings = source_config(self.root)
         self.assertEqual(settings['folder'], str(shared / '订单汇总'))
         self.assertEqual(set(source_directories(settings)), {
@@ -77,16 +77,16 @@ class SourcePathTests(unittest.TestCase):
         self.assertFalse((shared / '原始销量').exists(), 'resolving sources never creates shared directories')
 
     def test_multi_source_settings_are_portable_and_keep_upload_destination(self):
-        shared = self.parent / '共享数据' / 'SOP计划'
+        shared = self.parent / '工作台数据' / 'shared' / 'SOP计划'
         local = self.root / 'input_file'
         saved = portable_source_config(self.root, local, False, [shared, local, local])
-        self.assertEqual(saved, {'folder': 'input_file', 'folders': ['../共享数据/SOP计划', 'input_file'], 'auto': False})
+        self.assertEqual(saved, {'folder': 'input_file', 'folders': ['../工作台数据/shared/SOP计划', 'input_file'], 'auto': False})
         moved = self.parent / 'relocated' / '数据速查'
         config_file = data_dir(moved) / 'workspace.json'
         config_file.parent.mkdir(parents=True)
         config_file.write_text(json.dumps(saved), encoding='utf-8')
         settings = source_config(moved)
-        self.assertEqual(source_directories(settings), [(moved.parent / '共享数据' / 'SOP计划').resolve(), (moved / 'input_file').resolve()])
+        self.assertEqual(source_directories(settings), [(moved.parent / '工作台数据' / 'shared' / 'SOP计划').resolve(), (moved / 'input_file').resolve()])
         self.assertEqual(settings['folder'], str((moved / 'input_file').resolve()))
 
     def test_upload_destination_must_belong_to_configured_sources(self):
@@ -99,21 +99,21 @@ class SourcePathTests(unittest.TestCase):
 
     def test_missing_category_does_not_fall_back_to_private_input(self):
         (self.root / "input_file").mkdir()
-        shared = self.parent / "共享数据"
-        shared.mkdir()
+        shared = self.parent / "工作台数据" / "shared"
+        shared.mkdir(parents=True)
         self.assertEqual(default_source_directory(self.root), shared / "订单汇总")
         self.assertFalse((shared / "订单汇总").exists())
 
     def test_explicit_root_wins_even_if_it_does_not_exist(self):
-        (self.parent / "共享数据").mkdir()
+        (self.parent / "工作台数据" / "shared").mkdir(parents=True)
         explicit = self.parent / "外部共享数据"
         with patch.dict(os.environ, {"SHARED_DATA_ROOT": str(explicit)}):
             self.assertEqual(default_source_directory(self.root), explicit / "订单汇总")
         self.assertFalse(explicit.exists())
 
     def test_saved_source_wins_over_shared_default_and_environment(self):
-        shared = self.parent / "共享数据"
-        shared.mkdir()
+        shared = self.parent / "工作台数据" / "shared"
+        shared.mkdir(parents=True)
         workspace = data_dir(self.root) / "workspace.json"
         workspace.parent.mkdir(parents=True)
         saved = {"folder": str(self.parent / "用户选择的来源"), "auto": False}
@@ -131,26 +131,26 @@ class SourcePathTests(unittest.TestCase):
     def test_relative_shared_root_and_saved_source_ignore_current_directory(self):
         workspace = data_dir(self.root) / 'workspace.json'
         workspace.parent.mkdir(parents=True)
-        workspace.write_text(json.dumps({'folder': '../共享数据/订单汇总', 'auto': False}), encoding='utf-8')
+        workspace.write_text(json.dumps({'folder': '../工作台数据/shared/订单汇总', 'auto': False}), encoding='utf-8')
         previous = Path.cwd()
         try:
             os.chdir(self.parent)
             with patch.dict(os.environ, {'SHARED_DATA_ROOT': '../alternate-shared'}):
                 self.assertEqual(default_source_directory(self.root), self.parent.resolve() / 'alternate-shared' / '订单汇总')
-                self.assertEqual(source_config(self.root)['folder'], str(self.parent.resolve() / '共享数据' / '订单汇总'))
+                self.assertEqual(source_config(self.root)['folder'], str(self.parent.resolve() / '工作台数据' / 'shared' / '订单汇总'))
         finally:
             os.chdir(previous)
 
     def test_workspace_sources_are_portable_and_external_sources_stay_absolute(self):
-        shared = self.parent / '共享数据' / '订单汇总'
+        shared = self.parent / '工作台数据' / 'shared' / '订单汇总'
         saved = portable_source_config(self.root, shared, False)
-        self.assertEqual(saved, {'folder': '../共享数据/订单汇总', 'auto': False})
+        self.assertEqual(saved, {'folder': '../工作台数据/shared/订单汇总', 'auto': False})
         self.assertEqual(portable_source_config(self.root, self.root / 'input_file')['folder'], 'input_file')
         moved_root = self.parent / 'relocated-workspace' / '数据速查'
         workspace = data_dir(moved_root) / 'workspace.json'
         workspace.parent.mkdir(parents=True)
         workspace.write_text(json.dumps(saved), encoding='utf-8')
-        self.assertEqual(source_config(moved_root)['folder'], str(moved_root.parent.resolve() / '共享数据' / '订单汇总'))
+        self.assertEqual(source_config(moved_root)['folder'], str(moved_root.parent.resolve() / '工作台数据' / 'shared' / '订单汇总'))
         with tempfile.TemporaryDirectory() as outside:
             external = Path(outside).resolve() / 'outside-source'
             self.assertEqual(portable_source_config(self.root, external)['folder'], str(external))

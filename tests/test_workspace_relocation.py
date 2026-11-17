@@ -37,7 +37,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
         self.old_root = self.root / 'old-workspace'
         self.new_root = self.root / 'moved-workspace'
-        self.shared = self.new_root / '共享数据'
+        self.shared = self.new_root / '工作台数据' / 'shared'
         self.rules_path = self.root / 'recognition.json'
         overrides = patch.object(excel_parser, 'OVERRIDES', self.rules_path)
         overrides.start()
@@ -51,7 +51,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
         return datasets, versions
 
     def moved_source(self, relative=Path('订单汇总') / 'nested' / 'orders.xlsx'):
-        old_file = self.old_root / '共享数据' / relative
+        old_file = self.old_root / '工作台数据' / 'shared' / relative
         save_workbook(old_file)
         result = self.store.sync(old_file.parent)
         self.assertEqual((result.files, result.tables, result.errors), (1, 1, []))
@@ -157,7 +157,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
 
     def test_missing_source_is_not_a_workspace_move_when_old_root_still_exists(self):
         old_file, _, _ = self.moved_source()
-        self.old_root.mkdir()
+        (self.old_root / "工作台数据").mkdir(parents=True)
         self.assertFalse(old_file.exists())
         self.assert_skipped_without_changes(old_file)
 
@@ -168,7 +168,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
         self.assert_skipped_without_changes(old_file, active_sources=[allowed])
 
     def test_ambiguous_shared_anchor_is_not_migrated(self):
-        old_file, _, _ = self.moved_source(Path('订单汇总') / '共享数据' / 'orders.xlsx')
+        old_file, _, _ = self.moved_source(Path('订单汇总') / '工作台数据' / 'shared' / 'orders.xlsx')
         self.assert_skipped_without_changes(old_file)
 
     def test_any_signature_difference_including_parser_version_is_rejected(self):
@@ -200,7 +200,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
         self.assert_skipped_without_changes(old_file)
 
     def test_two_missing_workspaces_mapping_to_one_destination_are_both_skipped(self):
-        relative = Path('共享数据') / '订单汇总' / 'orders.xlsx'
+        relative = Path('工作台数据') / 'shared' / '订单汇总' / 'orders.xlsx'
         first = self.old_root / relative
         second_root = self.root / 'another-old-workspace'
         second = second_root / relative
@@ -240,8 +240,8 @@ class WorkspaceRelocationTests(unittest.TestCase):
         for source in Path(__file__).resolve().parents[1].glob('*.py'):
             shutil.copy2(source, project / source.name)
         shutil.copy2(Path(__file__).resolve().parents[1] / 'requirements.txt', project / 'requirements.txt')
-        shared = self.root / '共享数据'
-        shared.mkdir()
+        shared = self.root / '工作台数据' / 'shared'
+        shared.mkdir(parents=True)
         script = textwrap.dedent('''
             import sys
             from pathlib import Path
@@ -252,7 +252,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
             assert server.ROOT == Path.cwd().resolve()
             assert server.STORE.path == server.ROOT.parent / '工作台数据' / 'database' / 'quicklook' / 'warehouse.db'
             bind_fails = sys.argv[1] == 'fail'
-            shared = server.ROOT.parent / '共享数据'
+            shared = server.ROOT.parent / '工作台数据' / 'shared'
             expected_sources = [shared / name for name in ('订单汇总', '原始销量', '车型信息', 'SOP计划')]
             expected_sources.append(server.ROOT / 'input_file')
             events = []
@@ -306,7 +306,7 @@ class WorkspaceRelocationTests(unittest.TestCase):
                     migration.assert_not_called()
                     assert events == ['bind', 'thread-created', 'watch-start', 'upload-sync', 'serve'], events
         ''')
-        environment = {**os.environ, 'PYTHONPATH': '', 'SHARED_DATA_ROOT': '../共享数据',
+        environment = {**os.environ, 'PYTHONPATH': '', 'SHARED_DATA_ROOT': '../工作台数据/shared',
                        'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUTF8': '1', 'DATA_QUICKLOOK_DATA_DIR': '', 'DATA_QUICKLOOK_SOURCE_BASE': ''}
         result = subprocess.run([sys.executable, '-B', '-c', script, 'fail' if bind_fails else 'success'],
                                 cwd=project, env=environment, capture_output=True,

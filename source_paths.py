@@ -17,7 +17,8 @@ def shared_data_root(root):
     configured = os.environ.get("SHARED_DATA_ROOT")
     if configured:
         return resolve_source_path(root, configured)
-    shared_root = root.parent / "共享数据"
+    base = resolve_source_path(root, os.environ["PLANHUB_DATA_ROOT"]) if os.environ.get("PLANHUB_DATA_ROOT") else root.parent / "工作台数据"
+    shared_root = base / "shared"
     return shared_root if shared_root.is_dir() else None
 
 

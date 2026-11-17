@@ -20,3 +20,12 @@ class StorageMigrationTests(unittest.TestCase):
  def test_refuses_live_directory(self):
   with tempfile.TemporaryDirectory() as tmp:
    with self.assertRaises(ValueError):module.relocate(tmp,tmp,Path(tmp)/'new')
+
+ def test_relative_shared_sources_keep_relative_form(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp).resolve();project=root/'quicklook';stage=root/'stage';stage.mkdir();old=root/'old-shared';new=root/'state/shared'
+   saved={'folder':'../old-shared/orders','folders':['../old-shared/orders','input_file'],'auto':True}
+   (stage/'workspace.json').write_text(json.dumps(saved),encoding='utf-8')
+   module.relocate(stage,old,new,project)
+   result=json.loads((stage/'workspace.json').read_text(encoding='utf-8'))
+   self.assertEqual(result,{'folder':'../state/shared/orders','folders':['../state/shared/orders','input_file'],'auto':True})

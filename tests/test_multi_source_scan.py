@@ -27,7 +27,7 @@ class MultiSourceScanTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.shared = self.root / '共享数据'
+        self.shared = self.root / '工作台数据' / 'shared'
         self.local = self.root / '数据速查' / 'input_file'
         self.local.mkdir(parents=True)
         self.store = Warehouse(self.root / 'test.db')

@@ -53,7 +53,7 @@ class MultiSourceHTTPTests(unittest.TestCase):
         self.parent = Path(self.temporary.name).resolve()
         self.project = self.parent / '数据速查'
         self.local = self.project / 'input_file'
-        self.shared = self.parent / '共享数据' / '订单汇总'
+        self.shared = self.parent / '工作台数据' / 'shared' / '订单汇总'
         self.outside = self.parent / '未接入目录'
         for folder in (self.local, self.shared, self.outside):
             folder.mkdir(parents=True)
@@ -64,7 +64,7 @@ class MultiSourceHTTPTests(unittest.TestCase):
         self.config_file = self.project / 'output_file' / 'workspace.json'
         self.config_file.parent.mkdir(parents=True)
         self.config_file.write_text(json.dumps({
-            'folder': 'input_file', 'folders': ['input_file', '../共享数据/订单汇总'],
+            'folder': 'input_file', 'folders': ['input_file', '../工作台数据/shared/订单汇总'],
             'auto': False,
         }, ensure_ascii=False), encoding='utf-8')
         self.store = Warehouse(self.config_file.parent / 'test.db')
