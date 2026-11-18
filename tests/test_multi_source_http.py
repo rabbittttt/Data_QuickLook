@@ -10,12 +10,13 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import urlencode
 
 from openpyxl import Workbook, load_workbook
 
 import server
+from shared_sync import SharedFileMonitor
 from warehouse import Warehouse
 
 
@@ -52,17 +53,20 @@ class MultiSourceHTTPTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.parent = Path(self.temporary.name).resolve()
         self.project = self.parent / '数据速查'
-        self.local = self.project / 'input_file'
-        self.shared = self.parent / '工作台数据' / 'shared' / '订单汇总'
+        self.legacy = self.project / 'input_file'
+        self.shared_root = self.parent / '工作台数据' / 'shared'
+        self.local = self.shared_root / '原始销量'
+        self.shared = self.shared_root / '订单汇总'
         self.outside = self.parent / '未接入目录'
-        for folder in (self.local, self.shared, self.outside):
+        for folder in (self.local, self.shared, self.legacy, self.outside):
             folder.mkdir(parents=True)
         self.local_content = workbook_bytes(100)
         self.shared_content = workbook_bytes(200)
         (self.local / '同名.xlsx').write_bytes(self.local_content)
         (self.shared / '同名.xlsx').write_bytes(self.shared_content)
-        self.config_file = self.project / 'output_file' / 'workspace.json'
-        self.config_file.parent.mkdir(parents=True)
+        storage = self.parent / '工作台数据' / 'database' / 'quicklook'
+        storage.mkdir(parents=True)
+        self.config_file = storage / 'workspace.json'
         self.config_file.write_text(json.dumps({
             'folder': 'input_file', 'folders': ['input_file', '../工作台数据/shared/订单汇总'],
             'auto': False,
@@ -72,13 +76,15 @@ class MultiSourceHTTPTests(unittest.TestCase):
         self.status = {'busy': False, 'errors': [], 'last_sync': None}
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(server, 'ROOT', self.project))
-        self.stack.enter_context(patch.object(server, 'CONFIG', self.config_file))
         self.stack.enter_context(patch.object(server, 'STORE', self.store))
         self.stack.enter_context(patch.object(server, 'DATA_DIR', self.config_file.parent))
         self.stack.enter_context(patch.object(server, 'STATUS', self.status))
         self.stack.enter_context(patch.object(server, 'LOCK', threading.RLock()))
         self.stack.enter_context(patch.object(server, 'SYNC_LOCK', threading.Lock()))
-        self.stack.enter_context(patch.dict(os.environ, {'SHARED_DATA_ROOT': '', 'DATA_QUICKLOOK_SOURCE_BASE': str(self.project)}))
+        self.stack.enter_context(patch.dict(os.environ, {
+            'SHARED_DATA_ROOT': '', 'PLANHUB_DATA_ROOT': '',
+            'DATA_QUICKLOOK_SOURCE_BASE': '', 'DATA_QUICKLOOK_DATA_DIR': str(storage),
+        }))
         self.httpd = ThreadingHTTPServer(('127.0.0.1', 0), QuietHandler)
         self.worker = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.worker.start()
@@ -157,13 +163,64 @@ class MultiSourceHTTPTests(unittest.TestCase):
                              expected_values[Path(table['file_path']).parent])
 
     def test_directly_placed_files_are_not_discovered_by_refresh(self):
-        (self.local / '未上传.xlsx').write_bytes(workbook_bytes(333))
+        (self.legacy / '未上传.xlsx').write_bytes(workbook_bytes(333))
         uploads = self.config_file.parent / 'uploads'
         uploads.mkdir()
         (uploads / '未上传.xlsx').write_bytes(workbook_bytes(444))
         catalog = self.sync()
         self.assertEqual(len(catalog['files']), 2)
         self.assertEqual(len(catalog['tables']), 2)
+
+    def test_legacy_workbook_stays_in_database_without_accessing_its_original(self):
+        path = self.legacy / '旧文件.xlsx'
+        path.write_bytes(workbook_bytes(123))
+        self.store.sync(self.legacy)
+        stat = Path.stat
+
+        def check_path(candidate, *args, **kwargs):
+            if candidate == path:
+                raise AssertionError('The retired input_file path must not be accessed')
+            return stat(candidate, *args, **kwargs)
+
+        with patch.object(Path, 'stat', check_path):
+            _, catalog = self.request('catalog')
+            table = next(table for table in catalog['tables'] if table['file_name'] == path.name)
+            self.assertTrue(table['archived'])
+            self.assertNotIn(str(path), [file['path'] for file in catalog['files']])
+            self.assertEqual(self.request('raw', id=table['id'])[0], 400)
+            code, data = self.request('table', id=table['id'])
+            self.assertEqual(code, 200)
+            self.assertEqual(data['rows'][0]['销量'], 123)
+
+    def test_shared_scan_indexes_both_categories_and_lists_unrecognized_originals(self):
+        (self.local / '新销量.xlsx').write_bytes(workbook_bytes(300))
+        (self.shared / '新订单.xlsx').write_bytes(workbook_bytes(400))
+        blank = self.shared / '待识别.xlsx'
+        book = Workbook()
+        try:
+            book.save(blank)
+        finally:
+            book.close()
+        clock = 0
+        monitor = SharedFileMonitor(server.shared_sources, self.store.file_versions, lambda: clock)
+        stop = Mock()
+        stop.is_set.side_effect = [False, False, True]
+
+        def advance(delay):
+            nonlocal clock
+            clock += delay
+
+        stop.wait.side_effect = advance
+        with patch.object(server, 'SharedFileMonitor', return_value=monitor), patch.object(server, 'SHARED_FILES', frozenset()):
+            server.watch_shared(stop)
+            wait_until(lambda: not self.status['busy'])
+            code, catalog = self.request('catalog')
+            self.assertEqual(code, 200)
+            self.assertEqual({table['file_name'] for table in catalog['tables']}, {'同名.xlsx', '新销量.xlsx', '新订单.xlsx'})
+            self.assertFalse(any(table['archived'] for table in catalog['tables']))
+            file = next(file for file in catalog['files'] if file['path'] == str(blank))
+            self.assertEqual(self.request('workbook', id=file['id'])[0], 200)
+            self.assertTrue(any(blank.name in error for error in catalog['status']['errors']))
 
     def test_catalog_checks_each_original_once_and_tolerates_an_unavailable_file(self):
         local = self.local / '同名.xlsx'

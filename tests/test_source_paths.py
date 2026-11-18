@@ -1,14 +1,13 @@
-"""Shared input selection must not silently revive a stale private copy."""
+"""Resolve private state and shared Excel roots independently."""
 
-import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from runtime_paths import DATA_DIR_ENV, SOURCE_BASE_ENV, data_dir, external_data_configured
-from source_paths import default_source_directory, source_config, portable_source_config, source_directories
+from runtime_paths import DATA_DIR_ENV, SOURCE_BASE_ENV, data_dir, external_data_configured, source_base
+from source_paths import shared_data_root
 
 
 class SourcePathTests(unittest.TestCase):
@@ -16,145 +15,83 @@ class SourcePathTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.parent = Path(temporary.name).resolve()
-        self.root = self.parent / "数据速查"
+        self.root = self.parent / '数据速查'
         self.root.mkdir()
-        env = patch.dict(os.environ, {"SHARED_DATA_ROOT": "", DATA_DIR_ENV: "", SOURCE_BASE_ENV: ""})
+        self.central = self.parent / '工作台数据'
+        env = patch.dict(os.environ, {
+            'SHARED_DATA_ROOT': '', 'PLANHUB_DATA_ROOT': '', DATA_DIR_ENV: '', SOURCE_BASE_ENV: '',
+        })
         env.start()
         self.addCleanup(env.stop)
 
-    def test_standalone_project_keeps_local_input(self):
+    def test_standalone_uses_centralized_state_without_a_local_input_fallback(self):
+        (self.root / 'input_file').mkdir()
         self.assertFalse(external_data_configured())
-        self.assertEqual(data_dir(self.root), self.parent / '工作台数据' / 'database' / 'quicklook')
-        self.assertEqual(source_config(self.root), {
-            "folder": str(self.root / "input_file"), "auto": True,
-        })
+        self.assertEqual(data_dir(self.root), self.central / 'database' / 'quicklook')
+        self.assertIsNone(shared_data_root(self.root))
 
-    def test_existing_state_and_relative_sources_survive_two_release_locations(self):
+    def test_explicit_state_survives_two_release_locations(self):
         state = self.root / 'output_file'
         state.mkdir()
-        config = state / 'workspace.json'
-        saved = {'folder': 'input_file', 'folders': ['input_file', '../工作台数据/shared/订单汇总'], 'auto': False}
-        config.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8')
-        before = config.read_bytes()
-        releases = [self.parent / 'releases' / version / 'payload' for version in ('first', 'second')]
         with patch.dict(os.environ, {DATA_DIR_ENV: str(state)}):
-            for release in releases:
+            for version in ('first', 'second'):
+                release = self.parent / 'releases' / version / 'payload'
                 release.mkdir(parents=True)
                 self.assertTrue(external_data_configured())
-                self.assertEqual(data_dir(release), state.resolve())
-                settings = source_config(release)
-                self.assertEqual(source_directories(settings), [
-                    (self.root / 'input_file').resolve(),
-                    (self.parent / '工作台数据' / 'shared' / '订单汇总').resolve(),
-                ])
-                self.assertFalse(settings['auto'])
+                self.assertEqual(data_dir(release), state)
+                self.assertEqual(source_base(release), self.root)
                 self.assertFalse((release / 'output_file').exists())
-        self.assertEqual(config.read_bytes(), before)
 
-    def test_source_base_can_keep_existing_relative_settings_with_a_new_state_location(self):
-        state = self.parent / 'persistent' / 'quicklook'
-        state.mkdir(parents=True)
-        config = state / 'workspace.json'
-        config.write_text(json.dumps({'folder': 'input_file', 'auto': False}), encoding='utf-8')
-        with patch.dict(os.environ, {DATA_DIR_ENV: str(state), SOURCE_BASE_ENV: str(self.root)}):
-            self.assertEqual(source_config(self.parent / 'release')['folder'],
-                             str((self.root / 'input_file').resolve()))
+    def test_default_shared_root_is_independent_of_state_and_source_base_overrides(self):
+        shared = self.central / 'shared'
+        (shared / '原始销量').mkdir(parents=True)
+        (shared / '订单汇总').mkdir()
+        external_state = self.parent / 'private' / 'quicklook'
+        configured_base = self.parent / 'unrelated' / 'source-base'
+        for override in (
+            {DATA_DIR_ENV: str(external_state)},
+            {SOURCE_BASE_ENV: str(configured_base)},
+            {DATA_DIR_ENV: str(external_state), SOURCE_BASE_ENV: str(configured_base)},
+        ):
+            with self.subTest(override=override), patch.dict(os.environ, override):
+                self.assertEqual(shared_data_root(self.root), shared)
 
-    def test_shared_root_keeps_order_summary_as_default_upload(self):
-        shared = self.parent / "工作台数据" / "shared"
-        for category in ("原始销量", "订单汇总", "车型信息"):
-            (shared / category).mkdir(parents=True)
-        self.assertEqual(default_source_directory(self.root), shared / "订单汇总")
-
-    def test_shared_defaults_include_all_categories_and_local_input(self):
-        shared = self.parent / '工作台数据' / 'shared'
+    def test_planhub_data_root_can_be_absolute_or_relative_to_project(self):
+        central = self.parent / '自定义工作台数据'
+        shared = central / 'shared'
         shared.mkdir(parents=True)
-        settings = source_config(self.root)
-        self.assertEqual(settings['folder'], str(shared / '订单汇总'))
-        self.assertEqual(set(source_directories(settings)), {
-            (shared / name).resolve() for name in ('原始销量', '订单汇总', '车型信息', 'SOP计划')
-        } | {(self.root / 'input_file').resolve()})
-        self.assertFalse((shared / '原始销量').exists(), 'resolving sources never creates shared directories')
+        for value in (str(central), '../自定义工作台数据'):
+            with self.subTest(value=value), patch.dict(os.environ, {'PLANHUB_DATA_ROOT': value}):
+                self.assertEqual(shared_data_root(self.root), shared)
+                self.assertEqual(data_dir(self.root), central / 'database' / 'quicklook')
 
-    def test_multi_source_settings_are_portable_and_keep_upload_destination(self):
-        shared = self.parent / '工作台数据' / 'shared' / 'SOP计划'
-        local = self.root / 'input_file'
-        saved = portable_source_config(self.root, local, False, [shared, local, local])
-        self.assertEqual(saved, {'folder': 'input_file', 'folders': ['../工作台数据/shared/SOP计划', 'input_file'], 'auto': False})
-        moved = self.parent / 'relocated' / '数据速查'
-        config_file = data_dir(moved) / 'workspace.json'
-        config_file.parent.mkdir(parents=True)
-        config_file.write_text(json.dumps(saved), encoding='utf-8')
-        settings = source_config(moved)
-        self.assertEqual(source_directories(settings), [(moved.parent / '工作台数据' / 'shared' / 'SOP计划').resolve(), (moved / 'input_file').resolve()])
-        self.assertEqual(settings['folder'], str((moved / 'input_file').resolve()))
-
-    def test_upload_destination_must_belong_to_configured_sources(self):
-        with self.assertRaises(ValueError):
-            portable_source_config(self.root, self.parent / 'outside', folders=[self.root / 'input_file'])
-        with self.assertRaises(ValueError):
-            source_directories({'folders': []})
-        with self.assertRaises(ValueError):
-            source_directories({'folders': ['']})
-
-    def test_missing_category_does_not_fall_back_to_private_input(self):
-        (self.root / "input_file").mkdir()
-        shared = self.parent / "工作台数据" / "shared"
-        shared.mkdir(parents=True)
-        self.assertEqual(default_source_directory(self.root), shared / "订单汇总")
-        self.assertFalse((shared / "订单汇总").exists())
-
-    def test_explicit_root_wins_even_if_it_does_not_exist(self):
-        (self.parent / "工作台数据" / "shared").mkdir(parents=True)
-        explicit = self.parent / "外部共享数据"
-        with patch.dict(os.environ, {"SHARED_DATA_ROOT": str(explicit)}):
-            self.assertEqual(default_source_directory(self.root), explicit / "订单汇总")
+    def test_explicit_shared_root_overrides_central_root_even_if_missing(self):
+        (self.central / 'shared').mkdir(parents=True)
+        explicit = self.parent / '外部共享数据'
+        with patch.dict(os.environ, {'PLANHUB_DATA_ROOT': str(self.central), 'SHARED_DATA_ROOT': str(explicit)}):
+            self.assertEqual(shared_data_root(self.root), explicit)
         self.assertFalse(explicit.exists())
 
-    def test_saved_source_wins_over_shared_default_and_environment(self):
-        shared = self.parent / "工作台数据" / "shared"
-        shared.mkdir(parents=True)
-        workspace = data_dir(self.root) / "workspace.json"
-        workspace.parent.mkdir(parents=True)
-        saved = {"folder": str(self.parent / "用户选择的来源"), "auto": False}
-        workspace.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
-        with patch.dict(os.environ, {"SHARED_DATA_ROOT": str(shared)}):
-            self.assertEqual(source_config(self.root), saved)
-        self.assertEqual(json.loads(workspace.read_text(encoding="utf-8")), saved)
+    def test_explicit_relative_shared_root_uses_configured_source_base(self):
+        state = self.parent / 'private' / 'quicklook'
+        base = self.parent / 'source' / 'base'
+        explicit = base.parent / '外部共享数据'
+        with patch.dict(os.environ, {
+            DATA_DIR_ENV: str(state), SOURCE_BASE_ENV: str(base),
+            'SHARED_DATA_ROOT': '../外部共享数据',
+        }):
+            self.assertEqual(data_dir(self.root), state)
+            self.assertEqual(source_base(self.root), base)
+            self.assertEqual(shared_data_root(self.root), explicit)
 
-    def test_explicit_config_file_is_respected(self):
-        workspace = self.parent / "custom-workspace.json"
-        saved = {"folder": str(self.parent / "custom-source"), "auto": False}
-        workspace.write_text(json.dumps(saved), encoding="utf-8")
-        self.assertEqual(source_config(self.root, workspace), saved)
-
-    def test_relative_shared_root_and_saved_source_ignore_current_directory(self):
-        workspace = data_dir(self.root) / 'workspace.json'
-        workspace.parent.mkdir(parents=True)
-        workspace.write_text(json.dumps({'folder': '../工作台数据/shared/订单汇总', 'auto': False}), encoding='utf-8')
-        previous = Path.cwd()
-        try:
-            os.chdir(self.parent)
-            with patch.dict(os.environ, {'SHARED_DATA_ROOT': '../alternate-shared'}):
-                self.assertEqual(default_source_directory(self.root), self.parent.resolve() / 'alternate-shared' / '订单汇总')
-                self.assertEqual(source_config(self.root)['folder'], str(self.parent.resolve() / '工作台数据' / 'shared' / '订单汇总'))
-        finally:
-            os.chdir(previous)
-
-    def test_workspace_sources_are_portable_and_external_sources_stay_absolute(self):
-        shared = self.parent / '工作台数据' / 'shared' / '订单汇总'
-        saved = portable_source_config(self.root, shared, False)
-        self.assertEqual(saved, {'folder': '../工作台数据/shared/订单汇总', 'auto': False})
-        self.assertEqual(portable_source_config(self.root, self.root / 'input_file')['folder'], 'input_file')
-        moved_root = self.parent / 'relocated-workspace' / '数据速查'
-        workspace = data_dir(moved_root) / 'workspace.json'
-        workspace.parent.mkdir(parents=True)
-        workspace.write_text(json.dumps(saved), encoding='utf-8')
-        self.assertEqual(source_config(moved_root)['folder'], str(moved_root.parent.resolve() / '工作台数据' / 'shared' / '订单汇总'))
-        with tempfile.TemporaryDirectory() as outside:
-            external = Path(outside).resolve() / 'outside-source'
-            self.assertEqual(portable_source_config(self.root, external)['folder'], str(external))
+    def test_legacy_warehouse_blocks_creation_of_an_empty_central_store(self):
+        old_store = self.root / 'output_file'
+        old_store.mkdir()
+        (old_store / 'warehouse.db').touch()
+        with self.assertRaisesRegex(RuntimeError, '旧持久数据尚未迁移'):
+            data_dir(self.root)
+        self.assertFalse(self.central.exists())
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

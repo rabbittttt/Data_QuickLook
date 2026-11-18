@@ -31,9 +31,9 @@
 
 上传成功后服务自动处理已登记的上传文件，网页跟踪进度并更新。点击“同步数据”可重试处理已上传文件。共享数据目录为专用自动来源，每 5 分钟检查一次新增和变化的 Excel；发现变化后至少观察 60 秒，文件修改时间和大小保持一致才入库，继续变化则重新计时。解析前后再次核对版本，失败时保留上次成功的数据。其他本地目录不自动接入新文件。网页每 10 分钟检查已入库数据的变化，以接收其他用户在前台上传的更新。
 
-旧版已入库的数据和可访问的原文件继续可查，既有设置文件保留。旧 input_file 目录不再自动接入新文件。旧来源的同名文件与新上传文件分别保留，上传只覆盖系统上传目录中的同名文件。正在编辑的图表发现更新时，保留草稿并允许手动载入更新。
+旧版已入库的数据继续可查。旧 input_file 及旧工作区目录设置已退出运行，原表入口只读取共享目录和上传目录。上传只覆盖系统上传目录中的同名文件。正在编辑的图表发现更新时，保留草稿并允许手动载入更新。
 
-共享目录默认使用原项目同级的 `工作台数据/shared/`，递归读取其中所有 `.xlsx`、`.xlsm`。发布部署可用 `SHARED_DATA_ROOT` 指定稳定的共享目录，或通过 `DATA_QUICKLOOK_SOURCE_BASE` 保留原项目基准；无需在网页开放磁盘路径设置。服务启动即执行第一次检查，已入库且未变化的文件跳过，新增和变化文件均需经过稳定观察。
+共享目录默认使用项目同级的 `工作台数据/shared/`，递归读取其中所有 `.xlsx`、`.xlsm`。发布部署可用 `SHARED_DATA_ROOT` 指定共享根。服务启动即执行第一次检查，已入库且未变化的文件跳过，新增和变化文件均需经过稳定观察。原表列表会列出稳定的共享工作簿，即使暂未识别出数据区域。
 
 ## PlanHub 正式发布
 
@@ -45,21 +45,21 @@
 
 默认输出为 `output_file/releases/quicklook-2026.11.10.1`，外层只有 `app-release.json` 和 `payload/`。清单记录每个发布文件的大小及 SHA-256。Python 运行时及其依赖安装在版本目录外，按 `payload/requirements.txt` 安装。
 
-沿用原数据时，先停止旧实例并备份原状态目录。下面从数据速查原项目根目录执行，直接指向已有的 `output_file`。发布目录放到其他位置时，将 `$release` 改为实际发布包路径。
+沿用原数据时，先停止旧实例并备份持久目录。下面从数据速查原项目根目录执行，直接指向集中持久目录。发布目录放到其他位置时，将 `$release` 改为实际发布包路径。
 
 ```powershell
 $release = (Resolve-Path './output_file/releases/quicklook-2026.11.10.1').Path
 $python = (Resolve-Path '../.venv/Scripts/python.exe').Path
-$env:DATA_QUICKLOOK_DATA_DIR = (Resolve-Path './output_file').Path
-$env:DATA_QUICKLOOK_SOURCE_BASE = (Get-Location).Path
+$env:DATA_QUICKLOOK_DATA_DIR = (Resolve-Path '../工作台数据/database/quicklook').Path
+$env:SHARED_DATA_ROOT = (Resolve-Path '../工作台数据/shared').Path
 $env:DATA_QUICKLOOK_PUBLIC_PREFIX = '/quicklook/'
 $env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
 & $python -m pip install -r (Join-Path $release 'payload/requirements.txt')
 & $python -B -u (Join-Path $release 'payload/server.py') --port 9473
 ```
 
-- `DATA_QUICKLOOK_DATA_DIR` 保存 `warehouse.db`、`workspace.json` 和 `recognition.json`。新版本直接读取同一目录，跳过旧版启动时的数据源重定位。需要搬动状态文件时，由操作人员离线备份和复制，程序启动时不会搬运旧文件。新上传的 Excel 位于持久目录的 `uploads/`，旧来源文件保持原位置。版本切换时让旧实例退出后再启动新实例。
-- 工作区设置里的相对数据源路径按 `DATA_QUICKLOOK_SOURCE_BASE` 解析。复用原 `output_file` 时，默认基准是其父目录。若将状态文件手动放到别处，设置原项目目录为基准，或在工作区设置中使用稳定的绝对路径。生产环境建议为数据目录与基准目录提供绝对路径。独立开发可直接使用现有启动脚本，未配置时沿用项目内 `output_file` 与根路径 `/`。
+- `DATA_QUICKLOOK_DATA_DIR` 指定持久目录，内含 `warehouse.db`、`recognition.json` 和上传原件 `uploads/`。版本切换时让旧实例退出，再用同一持久目录启动新实例。
+- `SHARED_DATA_ROOT` 指向包含「订单汇总」「原始销量」等子目录的共享根。默认使用项目同级的 `工作台数据/shared`，单独指定 `DATA_QUICKLOOK_DATA_DIR` 时也按此默认位置解析共享根。
 - 门户固定入口为 `/quicklook/`，整个子树代理到本机服务 `127.0.0.1:9473`。代理保留或剥离前缀均可，须保留查询参数、请求方法、上传正文和内容长度。导入上限为 256 MiB。CSV 和图表图片由浏览器根据已加载的数据生成。
 - 将 `DATA_QUICKLOOK_PUBLIC_ORIGIN` 替换为实际门户的协议、域名及非默认端口。HTTPS 终止或后端 Host 被改写时需要该值，来源校验仍按精确匹配执行。健康检查使用后端 `GET /healthz` 或门户 `GET /quicklook/healthz`，返回 `{"ok":true,"app":"quicklook"}`。
 - 门户侧只需确认固定入口、通用前缀代理、上传限制和健康探针。后续升级时切换服务指向新版 `payload/server.py`，沿用原持久目录、监听端口和公共前缀，然后重启数据速查。新增前缀内接口不需要另加代理规则。
@@ -102,7 +102,7 @@ $env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
 - 不直接支持 `.xls`；请先另存为 `.xlsx`。复杂多行表头、大量合并单元格、无字段名或仅以颜色表示业务含义的表格，不能保证自动识别正确，需手动修正区域和映射。
 - 原表预览展示单元格内容及合并布局，不渲染内嵌图片、图表和完整 Excel 样式。公式使用文件上次保存的缓存结果，本工具不负责重新计算 Excel 公式。
 - 跨表对比是各系列独立聚合后对齐，不会自动关联明细行、统一业务口径或推断销量下降原因。新版网页没有大模型自然语言分析入口。
-- 导入数据：`output_file/warehouse.db`；数据源设置：`output_file/workspace.json`；手动识别规则：`output_file/recognition.json`。导入失败时保留该文件的上次数据；移走文件或切换目录不会自动删除已导入历史数据。
+- 数据库和识别规则位于持久目录，上传原件保存于其中的 uploads/。导入失败时保留上次成功的数据。
 - 新版前端位于 `web/`，服务为 `server.py`，图表使用本地 ECharts 库并保留上游许可声明。
 
 ## 验证

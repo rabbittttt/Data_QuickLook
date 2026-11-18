@@ -20,8 +20,8 @@ import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
 from warehouse import Warehouse
-from source_paths import source_config, source_directories, shared_data_root
-from runtime_paths import data_dir, source_base
+from source_paths import source_directories, shared_data_root
+from runtime_paths import data_dir
 from shared_sync import SharedFileMonitor
 
 
@@ -53,18 +53,16 @@ STORE = Warehouse(DATA_DIR / 'warehouse.db')
 LOCK = threading.RLock()
 SYNC_LOCK = threading.Lock()
 SHARED_PENDING = {}
+SHARED_FILES = frozenset()
 STATUS = {'busy': False, 'errors': [], 'last_sync': None}
-CONFIG = DATA_DIR / 'workspace.json'
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 
 def config():
-    settings = source_config(ROOT, CONFIG)
-    folders = [*source_directories(settings), *shared_sources()]
     uploads = (DATA_DIR / 'uploads').resolve()
     return {
-        **settings, 'folder': str(uploads),
-        'folders': [str(path) for path in dict.fromkeys([uploads, *folders])],
+        'folder': str(uploads),
+        'folders': [str(path) for path in dict.fromkeys([uploads, *shared_sources()])],
         'auto': False,
     }
 
@@ -111,15 +109,17 @@ def request_sync(shared_versions=None):
 
 
 def shared_sources():
-    root = shared_data_root(source_base(ROOT))
+    root = shared_data_root(ROOT)
     return [root] if root is not None else []
 
 
 def watch_shared(stop):
+    global SHARED_FILES
     monitor = SharedFileMonitor(shared_sources, STORE.file_versions)
     while not stop.is_set():
         try:
             ready, delay = monitor.check()
+            SHARED_FILES = frozenset(monitor.stable_files)
             STATUS['shared_errors'] = list(monitor.errors)
             if ready:
                 request_sync(ready)
@@ -222,7 +222,7 @@ def catalog(records=None, *, sources=None, files=None):
     if sources is None:
         sources = source_directories(config())
     if files is None:
-        files = workbook_stats(row['file_path'] for row in records)
+        files = workbook_stats((row['file_path'] for row in records), sources)
     for row in records:
         row['fields'] = json.loads(row.pop('columns_json'))
         path = Path(row['file_path'])
@@ -259,11 +259,13 @@ def source_file_label(path, source, sources):
     return str(Path(label) / relative)
 
 
-def workbook_stats(indexed_paths):
+def workbook_stats(indexed_paths, sources):
     # One filesystem check per workbook, even when many tables share it.
-    paths = {Path(path) for path in indexed_paths} | set(STORE.uploaded_files())
+    paths = {Path(path) for path in indexed_paths} | set(STORE.uploaded_files()) | SHARED_FILES
     files = {}
     for path in paths:
+        if containing_source(path, sources) is None:
+            continue
         try:
             info = path.stat()
         except OSError:
@@ -278,14 +280,15 @@ def workbook_id(path):
 
 
 def workbook_files():
-    return {workbook_id(path): path for path in workbook_stats(STORE.catalog().file_path)}
+    sources = source_directories(config())
+    return {workbook_id(path): path for path in workbook_stats(STORE.catalog().file_path, sources)}
 
 
 def workbook_list(*, sources=None, stats=None):
     if sources is None:
         sources = source_directories(config())
     if stats is None:
-        stats = workbook_stats(STORE.catalog().file_path)
+        stats = workbook_stats(STORE.catalog().file_path, sources)
     files = []
     for path, stat in sorted(stats.items(), key=lambda item: str(item[0])):
         source = containing_source(path, sources)
@@ -444,7 +447,7 @@ class Handler(SimpleHTTPRequestHandler):
                 settings = config()
                 sources = source_directories(settings)
                 records = STORE.catalog().to_dict('records')
-                stats = workbook_stats(row['file_path'] for row in records)
+                stats = workbook_stats((row['file_path'] for row in records), sources)
                 return self.send_json({'tables': catalog(records, sources=sources, files=stats),
                                        'files': workbook_list(sources=sources, stats=stats),
                                        'status': status, 'config': settings})
@@ -481,6 +484,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'hits': hits})
             if parts.path == '/api/raw':
                 table = next(t for t in catalog() if t['id'] == query['id'][0])
+                if table['archived']:
+                    raise ValueError('原文件不可用，仍可查看已入库数据')
                 book = load_workbook(table['file_path'], read_only=True, data_only=True)
                 try:
                     sheet = book[table['sheet_name']]
@@ -530,6 +535,8 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == '/api/recognition':
                 from excel_parser import discover_tables, OVERRIDES
                 table = next(t for t in catalog() if t['id'] == payload['id'])
+                if table['archived']:
+                    raise ValueError('原文件不可用，无法修正识别区域')
                 from openpyxl.utils.cell import range_boundaries
                 left, top, right, bottom = range_boundaries(payload['range'])
                 if not all([left, top, right, bottom]) or bottom <= top or right < left:

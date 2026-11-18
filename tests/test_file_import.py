@@ -18,7 +18,6 @@ from openpyxl import Workbook
 
 import server
 from warehouse import ScanResult, Warehouse
-from source_paths import source_config
 
 
 def workbook_bytes(value=100):

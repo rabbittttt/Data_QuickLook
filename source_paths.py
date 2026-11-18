@@ -1,10 +1,9 @@
 """Resolve shared Excel inputs without moving an application's own state."""
 
-import json
 import os
 from pathlib import Path
 
-from runtime_paths import data_dir, source_base
+from runtime_paths import source_base
 
 
 def resolve_source_path(root, value):
@@ -14,26 +13,12 @@ def resolve_source_path(root, value):
 
 def shared_data_root(root):
     root = Path(root)
-    configured = os.environ.get("SHARED_DATA_ROOT")
+    configured = os.environ.get("SHARED_DATA_ROOT", "").strip()
     if configured:
-        return resolve_source_path(root, configured)
-    base = resolve_source_path(root, os.environ["PLANHUB_DATA_ROOT"]) if os.environ.get("PLANHUB_DATA_ROOT") else root.parent / "工作台数据"
-    shared_root = base / "shared"
+        return resolve_source_path(source_base(root), configured).resolve()
+    data_root = os.environ.get("PLANHUB_DATA_ROOT", "").strip() or "../工作台数据"
+    shared_root = resolve_source_path(root, data_root) / "shared"
     return shared_root if shared_root.is_dir() else None
-
-
-def default_source_directory(root):
-    shared_root = shared_data_root(root)
-    return shared_root / "订单汇总" if shared_root is not None else Path(root) / "input_file"
-
-
-def default_source_directories(root):
-    root = Path(root)
-    primary = default_source_directory(root)
-    if primary == root / 'input_file':
-        return [primary]
-    return [primary, *[primary.parent / name for name in ('原始销量', '车型信息', 'SOP计划')],
-            root / 'input_file']
 
 
 def source_directories(settings):
@@ -51,41 +36,3 @@ def source_directories(settings):
             seen.add(key)
             result.append(path)
     return result
-
-
-def source_config(root, config_file=None):
-    root = Path(root)
-    config_file = resolve_source_path(root, config_file) if config_file is not None else data_dir(root) / "workspace.json"
-    root = source_base(root)
-    if config_file.exists():
-        saved = json.loads(config_file.read_text(encoding="utf-8"))
-        if 'folders' in saved:
-            if not isinstance(saved['folders'], list) or not saved['folders']:
-                raise ValueError('请至少配置一个数据源目录')
-            folders = source_directories({'folders': [resolve_source_path(root, p) for p in saved['folders']],
-                                          'folder': saved.get('folder', saved['folders'][0])})
-            primary = resolve_source_path(root, saved.get('folder', folders[0])).resolve()
-            if primary not in folders:
-                primary = folders[0]
-            return {**saved, 'folder': str(primary), 'folders': [str(p) for p in folders]}
-        return {**saved, "folder": str(resolve_source_path(root, saved["folder"]))}
-    folders = default_source_directories(root)
-    settings = {"folder": str(folders[0]), "auto": True}
-    if len(folders) > 1:
-        settings['folders'] = [str(p) for p in folders]
-    return settings
-
-
-def portable_source_config(root, folder, auto=True, folders=None):
-    """Store workspace-local sources relative to this project; keep external paths."""
-    root = Path(root).resolve()
-    folder = resolve_source_path(root, folder).resolve()
-    saved = (Path(os.path.relpath(folder, root)).as_posix()
-             if folder.is_relative_to(root.parent) else str(folder))
-    settings = {"folder": saved, "auto": bool(auto)}
-    if folders is not None:
-        paths = source_directories({'folder': folder, 'folders': [resolve_source_path(root, p) for p in folders]})
-        if folder not in paths:
-            raise ValueError('默认导入目录必须是已配置的数据源之一')
-        settings['folders'] = [portable_source_config(root, path)['folder'] for path in paths]
-    return settings
