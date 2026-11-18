@@ -25,6 +25,34 @@ test('idle catalog checks run every ten minutes with an initial load',async()=>{
   await intervals[0].callback();assert.equal(refreshes,2);assert.equal(c.pollBusy,false);
 });
 
+test('a plain-text portal 502 can be retried without leaving the embedded page',async()=>{
+  const $=nodes(),intervals=[],routes=[],requests=[];let ready;
+  const c=vm.createContext({
+    $,state:{basket:[],page:'home'},location:{hash:'#explore'},localStorage:{getItem:()=>null},
+    window:{addEventListener:(_event,callback)=>{ready=callback;}},persistBasket:()=>{},
+    refreshCatalog:()=>c.api('catalog'),go:page=>routes.push(page),pollBusy:false,
+    setInterval:(callback,delay)=>intervals.push({callback,delay}),esc:String,
+    empty:(title,message,button)=>`${title} ${message} ${button}`,
+    fetch:async url=>{
+      requests.push(url);
+      return requests.length===1
+        ? new Response('Independent application unavailable; start its service or check integration configuration',{status:502})
+        : new Response(JSON.stringify({tables:[]}),{status:200,headers:{'Content-Type':'application/json'}});
+    },
+  });
+  $('meta[name="quicklook-base"]').content='/quicklook/';
+  vm.runInContext(snippet('function apiUrl(', 'async function tableData('),c);
+  vm.runInContext(app.match(/^const AUTO_REFRESH_INTERVAL=.*$/m)[0]+'\n'+app.slice(app.indexOf("window.addEventListener('DOMContentLoaded',")),c);
+  await ready();
+  assert.match($('#main').innerHTML,/数据速查后端暂不可用.*HTTP 502.*重新连接/);
+  assert.doesNotMatch($('#main').innerHTML,/Unexpected token|Independent application/);
+  assert.equal(intervals.length,0);
+  await $('#retryCatalog').onclick({currentTarget:$('#retryCatalog')});
+  assert.deepEqual(requests,['/quicklook/api/catalog','/quicklook/api/catalog']);
+  assert.deepEqual(routes,['explore']);
+  assert.equal(intervals.length,1);
+});
+
 test('requested sync checks completion promptly and stops once it finishes',async()=>{
   const $=nodes(),timers=new Map(),routes=[];let nextTimer=0,checks=0;
   const c=vm.createContext({$,state:{page:'explore',status:{busy:false}},syncProgressTimer:null,setTimeout:(callback,delay)=>{timers.set(++nextTimer,{callback,delay});return nextTimer;},clearTimeout:id=>timers.delete(id),refreshCatalog:async()=>{checks++;c.state.status.busy=checks===1;$('#syncButton').disabled=c.state.status.busy;return checks===2;},go:async(page,options)=>routes.push({page,options}),toast:()=>{}});

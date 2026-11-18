@@ -13,7 +13,23 @@ function apiUrl(path){
   const base=$('meta[name="quicklook-base"]')?.content || '';
   return base+'api/'+path;
 }
-async function api(path,body){const response=await fetch(apiUrl(path),body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.error||'请求失败');return data;}
+async function api(path,body){
+  let response;
+  try{
+    response=await fetch(apiUrl(path),body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }catch{
+    throw Error('连接数据速查服务失败，请重试。');
+  }
+  let data;
+  try{data=await response.json();}catch{
+    if([502,503,504].includes(response.status)){
+      throw Error(`数据速查后端暂不可用（HTTP ${response.status}）。若重试仍失败，请检查门户主机上的数据速查服务。`);
+    }
+    throw Error(`数据接口返回异常（HTTP ${response.status}），请重试。`);
+  }
+  if(!response.ok)throw Error(data?.error||`请求失败（HTTP ${response.status}）`);
+  return data;
+}
 async function tableData(id){
   if(state.cache.has(id))return state.cache.get(id);
   const version=state.catalogVersion||0,data=await api('table?id='+encodeURIComponent(id));
@@ -292,4 +308,31 @@ async function search(token){$('#main').innerHTML=header('SEARCH / 全局搜索'
 $('#allData').onclick=()=>go('explore');
 $('#startCompare').onclick=()=>go('compare');
 $('#nav').onclick=e=>{const b=e.target.closest('[data-page]');if(b)go(b.dataset.page);};$('#syncButton').onclick=async()=>{try{$('#syncButton').disabled=true;await api('sync',{});toast('正在更新已导入数据');trackRequestedSync();}catch(e){$('#syncButton').disabled=false;toast(e.message);}};$('#search').oninput=e=>{clearTimeout(searchTimer);state.query=e.target.value.trim();searchTimer=setTimeout(()=>{if(state.query)go('search',{background:true});else go('home',{background:true});},450);};document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){e.preventDefault();$('#search').focus();}});
-window.addEventListener('DOMContentLoaded',async()=>{try{await refreshCatalog();try{state.basket=JSON.parse(localStorage.getItem('shujian-basket')||'[]');}catch{}persistBasket();go(['home','raw','explore','compare','saved','health'].includes(location.hash.slice(1))?location.hash.slice(1):'home');setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{const changed=await refreshCatalog();if(changed)go(state.page,{background:true});}catch(e){$('#syncStatus').textContent='连接中断，请检查本地服务';}finally{pollBusy=false;}},AUTO_REFRESH_INTERVAL);}catch(e){$('#main').innerHTML=empty('数据服务未连接',esc(e.message));}});
+window.addEventListener('DOMContentLoaded',async()=>{
+  async function loadCatalog(){
+    try{await refreshCatalog();}catch(error){
+      $('#syncStatus').textContent='数据服务未连接';
+      $('#main').innerHTML=empty('数据服务未连接',esc(error.message),'<button id="retryCatalog">重新连接</button>');
+      $('#retryCatalog').onclick=async event=>{
+        event.currentTarget.disabled=true;
+        $('#syncStatus').textContent='正在连接数据仓库';
+        await loadCatalog();
+      };
+      return;
+    }
+    try{state.basket=JSON.parse(localStorage.getItem('shujian-basket')||'[]');}catch{}
+    persistBasket();
+    const page=location.hash.slice(1);
+    go(['home','raw','explore','compare','saved','health'].includes(page)?page:'home');
+    setInterval(async()=>{
+      if(pollBusy)return;
+      pollBusy=true;
+      try{
+        if(await refreshCatalog())go(state.page,{background:true});
+      }catch{
+        $('#syncStatus').textContent='连接中断，请检查数据速查服务';
+      }finally{pollBusy=false;}
+    },AUTO_REFRESH_INTERVAL);
+  }
+  await loadCatalog();
+});

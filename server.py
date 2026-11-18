@@ -12,6 +12,7 @@ import hashlib
 import re
 import argparse
 import socket
+from stat import S_ISREG
 import threading
 import time
 import tempfile
@@ -215,16 +216,20 @@ def import_workbook(stream, name, size, expected_folder='', replace_version=''):
             temporary.unlink(missing_ok=True)
 
 
-def catalog():
-    records = STORE.catalog().to_dict('records')
-    sources = source_directories(config())
+def catalog(records=None, *, sources=None, files=None):
+    if records is None:
+        records = STORE.catalog().to_dict('records')
+    if sources is None:
+        sources = source_directories(config())
+    if files is None:
+        files = workbook_stats(row['file_path'] for row in records)
     for row in records:
         row['fields'] = json.loads(row.pop('columns_json'))
         path = Path(row['file_path'])
         source = containing_source(path, sources)
         row['relative_path'] = source_file_label(path, source, sources) if source else str(path)
         row['source_folder'] = str(source) if source else None
-        row['archived'] = not path.exists() or source is None
+        row['archived'] = source is None or path not in files
         row['issues'] = []
         if any(f['name'].startswith('字段') for f in row['fields']):
             row['issues'].append('存在未命名字段，建议核对表头')
@@ -254,22 +259,37 @@ def source_file_label(path, source, sources):
     return str(Path(label) / relative)
 
 
-def workbook_files():
-    # Only published uploads and previously indexed workbooks are visible.
-    paths = {Path(path) for path in STORE.catalog().file_path} | set(STORE.uploaded_files())
-    return {hashlib.sha256(str(path).encode()).hexdigest()[:24]: path for path in paths if path.is_file()}
-
-
-def workbook_list():
-    sources = source_directories(config())
-    files = []
-    for key, path in sorted(workbook_files().items(), key=lambda item: str(item[1])):
+def workbook_stats(indexed_paths):
+    # One filesystem check per workbook, even when many tables share it.
+    paths = {Path(path) for path in indexed_paths} | set(STORE.uploaded_files())
+    files = {}
+    for path in paths:
         try:
-            stat = path.stat()
+            info = path.stat()
         except OSError:
             continue
+        if S_ISREG(info.st_mode):
+            files[path] = info
+    return files
+
+
+def workbook_id(path):
+    return hashlib.sha256(str(path).encode()).hexdigest()[:24]
+
+
+def workbook_files():
+    return {workbook_id(path): path for path in workbook_stats(STORE.catalog().file_path)}
+
+
+def workbook_list(*, sources=None, stats=None):
+    if sources is None:
+        sources = source_directories(config())
+    if stats is None:
+        stats = workbook_stats(STORE.catalog().file_path)
+    files = []
+    for path, stat in sorted(stats.items(), key=lambda item: str(item[0])):
         source = containing_source(path, sources)
-        files.append(dict(id=key, name=source_file_label(path, source, sources) if source else str(path), path=str(path), source_folder=str(source) if source else None,
+        files.append(dict(id=workbook_id(path), name=source_file_label(path, source, sources) if source else str(path), path=str(path), source_folder=str(source) if source else None,
                           signature=f'{stat.st_mtime_ns}:{stat.st_size}'))
     return files
 
@@ -421,7 +441,13 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'ok': True, 'app': 'quicklook'})
             if parts.path == '/api/catalog':
                 status = {**STATUS, 'errors': STATUS['errors'] + STATUS.get('shared_errors', [])}
-                return self.send_json({'tables': catalog(), 'files': workbook_list(), 'status': status, 'config': config()})
+                settings = config()
+                sources = source_directories(settings)
+                records = STORE.catalog().to_dict('records')
+                stats = workbook_stats(row['file_path'] for row in records)
+                return self.send_json({'tables': catalog(records, sources=sources, files=stats),
+                                       'files': workbook_list(sources=sources, stats=stats),
+                                       'status': status, 'config': settings})
             if parts.path == '/api/table':
                 return self.send_json(data(query['id'][0]))
             if parts.path == '/api/workbooks':

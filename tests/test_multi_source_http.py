@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import urlencode
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 import server
 from warehouse import Warehouse
@@ -164,6 +164,34 @@ class MultiSourceHTTPTests(unittest.TestCase):
         catalog = self.sync()
         self.assertEqual(len(catalog['files']), 2)
         self.assertEqual(len(catalog['tables']), 2)
+
+    def test_catalog_checks_each_original_once_and_tolerates_an_unavailable_file(self):
+        local = self.local / '同名.xlsx'
+        shared = self.shared / '同名.xlsx'
+        book = load_workbook(shared)
+        try:
+            book.copy_worksheet(book.active).title = '月销量'
+            book.save(shared)
+        finally:
+            book.close()
+        self.store.sync(self.shared)
+        stat = Path.stat
+        probes = []
+
+        def check_path(path, *args, **kwargs):
+            if path in (local, shared):
+                probes.append(path)
+            if path == local:
+                raise PermissionError('File temporarily unavailable')
+            return stat(path, *args, **kwargs)
+
+        with patch.object(Path, 'stat', check_path):
+            code, catalog = self.request('catalog')
+        self.assertEqual(code, 200, catalog)
+        self.assertCountEqual(probes, [local, shared])
+        self.assertEqual([file['path'] for file in catalog['files']], [str(shared)])
+        self.assertEqual(len(catalog['tables']), 3)
+        self.assertEqual([table['file_path'] for table in catalog['tables'] if table['archived']], [str(local)])
 
     def test_managed_upload_survives_reopening_database_and_preserves_legacy(self):
         uploads = self.config_file.parent / 'uploads'
