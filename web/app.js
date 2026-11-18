@@ -171,7 +171,12 @@ const cards=recommended.map((t,i)=>`<article class="card"><div class="cardtop"><
 $('#main').innerHTML=`<h1 class="overview-heading">数据概览</h1><div class="stats">${metrics.map(([label,value,sub,icon])=>`<div class="stat"><div class="stat-head"><span>${label}</span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon}"/></svg></div><b>${fmt(value)}</b><span>${sub}</span></div>`).join('')}</div><div class="sectionhead"><div><h2>推荐分析</h2><p>根据字段类型生成起点，可随时调整指标与口径</p></div></div><div class="cards overview-cards">${cards}</div>`+(tables.length?'':empty('暂无数据','','<button id="emptyImport">导入文件</button>'));
 $('#emptyImport')?.addEventListener('click',()=>$('#importButton').click());document.querySelectorAll('[data-recommend]').forEach(b=>b.onclick=async()=>{configureChart(b.dataset.recommend,metricFields(tableById(b.dataset.recommend))[0].name);});
 await Promise.all(recommended.map(async(t,i)=>{
-  const data=await tableData(t.id);if(token!==renderToken)return;
+  let data;
+  try{data=await tableData(t.id);}catch{
+    if(token===renderToken)$('#mini'+i).textContent='暂时无法读取此图表';
+    return;
+  }
+  if(token!==renderToken)return;
   const metric=metricFields(t)[0].name,dimension=chooseDimension(t),operation=/率|占比|比例/.test(metric)?'平均值':'求和';
   const temporal=/日期|月份|年月/.test(dimension);
   let values=[...aggregateRows(data,{dimension,metric,operation,excludeTotals:true})];

@@ -3,6 +3,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 from urllib.parse import urlparse, urlsplit, parse_qs, parse_qsl, quote, urlencode, unquote
+from xml.parsers.expat import ParserCreate
 from dataclasses import asdict
 from html import escape, unescape
 from io import BytesIO
@@ -12,6 +13,8 @@ import hashlib
 import re
 import argparse
 import socket
+import sqlite3
+import sys
 from stat import S_ISREG
 import threading
 import time
@@ -19,6 +22,8 @@ import tempfile
 import webbrowser
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.utils.cell import coordinate_to_tuple, range_boundaries
+from openpyxl.xml.constants import SHEET_MAIN_NS
 from warehouse import Warehouse
 from source_paths import source_directories, shared_data_root
 from runtime_paths import data_dir
@@ -305,9 +310,43 @@ def workbook_info(path):
         book.close()
 
 
+def sheet_layout(sheet):
+    """Stream only the selected sheet's cell coordinates and merge ranges."""
+    row_tag, cell_tag, merge_tag = (f'{SHEET_MAIN_NS} {name}' for name in ('row', 'c', 'mergeCell'))
+    max_row = max_col = 1
+    row = column = 0
+    merges = []
+
+    def start_element(tag, attributes):
+        nonlocal row, column, max_row, max_col
+        if tag == row_tag:
+            row = int(attributes.get('r', row + 1))
+            column = 0
+        elif tag == cell_tag:
+            coordinate = attributes.get('r')
+            cell_row, column = coordinate_to_tuple(coordinate) if coordinate else (row, column + 1)
+            max_row, max_col = max(max_row, cell_row), max(max_col, column)
+        elif tag == merge_tag:
+            bounds = range_boundaries(attributes['ref'])
+            merges.append(list(bounds))
+            max_row, max_col = max(max_row, bounds[3]), max(max_col, bounds[2])
+
+    def reject_doctype(*_):
+        raise ValueError('工作表 XML 不支持文档类型声明')
+
+    # The dimension element can be wrong or absent. SAX keeps the layout scan
+    # bounded in memory even when the selected sheet has many populated rows.
+    parser = ParserCreate(namespace_separator=' ')
+    parser.StartElementHandler = start_element
+    parser.StartDoctypeDeclHandler = reject_doctype
+    with sheet._get_source() as source:
+        parser.ParseFile(source)
+    return max_row, max_col, merges
+
+
 def original_sheet(path, sheet_name=None, start=1, column=1):
     """Read source cells independently of inferred tables. Never save the workbook."""
-    book = load_workbook(path, data_only=True)
+    book = load_workbook(path, read_only=True, data_only=True, keep_links=False)
     try:
         sheets = [sheet.title for sheet in book.worksheets]
         missing_sheet = sheet_name if sheet_name and sheet_name not in sheets else None
@@ -316,15 +355,18 @@ def original_sheet(path, sheet_name=None, start=1, column=1):
         sheet = book[sheet_name] if sheet_name and not missing_sheet else book.worksheets[0]
         if missing_sheet:
             start = column = 1
-        start = min(max(1, start), sheet.max_row)
-        column = min(max(1, column), sheet.max_column)
-        bottom, right = min(start+79, sheet.max_row), min(column+29, sheet.max_column)
-        rows = [[cell.value for cell in row] for row in sheet.iter_rows(
-            min_row=start, max_row=bottom, min_col=column, max_col=right)]
-        merges = [list(r.bounds) for r in sheet.merged_cells.ranges
-                  if r.min_row <= bottom and r.max_row >= start and r.min_col <= right and r.max_col >= column]
+        max_row, max_col, ranges = sheet_layout(sheet)
+        start = min(max(1, start), max_row)
+        column = min(max(1, column), max_col)
+        bottom, right = min(start+79, max_row), min(column+29, max_col)
+        rows = [list(row) for row in sheet.iter_rows(
+            min_row=start, max_row=bottom, min_col=column, max_col=right, values_only=True)]
+        while len(rows) < bottom - start + 1:
+            rows.append([None] * (right - column + 1))
+        merges = [bounds for bounds in ranges if bounds[1] <= bottom and bounds[3] >= start
+                  and bounds[0] <= right and bounds[2] >= column]
         return dict(sheets=sheets, sheet=sheet.title, rows=rows, merges=merges,
-                    start=start, column=column, max_row=sheet.max_row, max_col=sheet.max_column,
+                    start=start, column=column, max_row=max_row, max_col=max_col,
                     missing_sheet=missing_sheet,
                     warning=f'原工作表“{missing_sheet}”已不存在，已显示“{sheet.title}”。请重新选择当前工作表；旧图表未改动。' if missing_sheet else '')
     finally:
@@ -439,6 +481,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parts = urlparse(self.path)
         query = parse_qs(parts.query)
+        started = time.monotonic()
         try:
             if parts.path == '/healthz':
                 return self.send_json({'ok': True, 'app': 'quicklook'})
@@ -498,7 +541,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': '接口不存在'}, 404)
             return super().do_GET()
         except Exception as exc:
+            self.log_error('%s failed (%s): %s', parts.path, type(exc).__name__, exc)
             self.send_json({'error': str(exc)}, 400)
+        finally:
+            elapsed = time.monotonic() - started
+            if elapsed >= 2:
+                self.log_message('%s finished in %.2fs', parts.path, elapsed)
 
     def do_POST(self):
         # Non-simple content types + same origin; listen exclusively on loopback.
@@ -560,6 +608,8 @@ APP_TITLE = '数据速查'
 
 
 class WorkbenchHTTPServer(ThreadingHTTPServer):
+    request_queue_size = 32
+
     def server_bind(self):
         if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
             # Windows must not let a second launcher share the same listening port.
@@ -602,6 +652,10 @@ def run_server(open_browser=False, port=DEFAULT_PORT):
             return
         raise
     with httpd:
+        try:
+            STORE.enable_concurrent_reads()
+        except sqlite3.Error as exc:
+            print(f'数据库并发读取模式未启用：{exc}', file=sys.stderr)
         stop = threading.Event()
         threading.Thread(target=watch_shared, args=(stop,), daemon=True).start()
         request_sync()  # Recheck persisted uploads with this parser version on every startup.

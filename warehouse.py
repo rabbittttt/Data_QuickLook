@@ -83,6 +83,17 @@ class Warehouse:
         finally:
             connection.close()
 
+    def enable_concurrent_reads(self):
+        # WAL lets requests read the last committed data during a workbook import.
+        # Keep SQLite's existing mode for Windows network shares and mapped drives.
+        if os.name == 'nt':
+            from ctypes import windll
+            drive = self.path.resolve().anchor
+            if drive.startswith('\\\\') or windll.kernel32.GetDriveTypeW(drive) == 4:
+                return
+        with self.connect() as connection:
+            connection.execute('PRAGMA journal_mode=WAL').fetchone()
+
     def _init_schema(self) -> None:
         with self.connect() as connection:
             connection.executescript(

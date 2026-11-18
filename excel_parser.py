@@ -69,46 +69,27 @@ def _row_nonempty(row: list[Any]) -> int:
     return sum(not _blank(value) for value in row)
 
 
-def _active_row_bands(matrix: list[list[Any]]) -> list[tuple[int, int]]:
-    """Split a sheet on blank rows while retaining one-row titles."""
-    active = [_row_nonempty(row) > 0 for row in matrix]
-    bands: list[tuple[int, int]] = []
-    start: int | None = None
-    blank_run = 0
-    for index, is_active in enumerate(active):
-        if is_active:
-            if start is None:
-                start = index
-            blank_run = 0
-        elif start is not None:
-            blank_run += 1
-            if blank_run >= 1:
-                bands.append((start, index - blank_run))
-                start = None
-                blank_run = 0
-    if start is not None:
-        bands.append((start, len(matrix) - 1))
-    return bands
-
-
-def _column_bands(matrix: list[list[Any]], top: int, bottom: int) -> list[tuple[int, int]]:
-    max_cols = max((len(row) for row in matrix[top : bottom + 1]), default=0)
-    active = []
-    for col in range(max_cols):
-        count = sum(
-            col < len(matrix[row]) and not _blank(matrix[row][col])
-            for row in range(top, bottom + 1)
-        )
-        active.append(count > 0)
-    bands: list[tuple[int, int]] = []
-    start: int | None = None
-    for index, is_active in enumerate(active + [False]):
-        if is_active and start is None:
+def _consecutive_bands(indices: Iterable[int]) -> Iterable[tuple[int, int]]:
+    start = previous = None
+    for index in sorted(indices):
+        if previous is None or index != previous + 1:
+            if start is not None:
+                yield start, previous
             start = index
-        elif not is_active and start is not None:
-            bands.append((start, index - 1))
-            start = None
-    return bands
+        previous = index
+    if start is not None:
+        yield start, previous
+
+
+def _populated_rows(worksheet) -> dict[int, dict[int, Any]]:
+    # Normal-mode openpyxl retains merges and has already loaded the stored
+    # cells. iter_rows over max_row/max_column would instantiate every blank.
+    rows: dict[int, dict[int, Any]] = {}
+    for (row, column), cell in worksheet._cells.items():
+        value = _clean(cell.value)
+        if not _blank(value):
+            rows.setdefault(row, {})[column] = value
+    return rows
 
 
 def _header_score(rows: list[list[Any]], candidate: int) -> float:
@@ -135,16 +116,18 @@ def _header_score(rows: list[list[Any]], candidate: int) -> float:
     return string_ratio * 3 + unique + type_contrast * 2 + min(data_rows, 3) * 0.4 + (5 if periods >= 2 else 0)
 
 
-def _fill_merged_labels(worksheet, matrix, header_row, left, right, bottom):
+def _fill_merged_labels(worksheet, rows, first_row, header_row, left, right):
     """Fill only actual vertical merges below this header; ordinary blanks stay blank."""
+    bottom = first_row + len(rows) - 1
     for merged in worksheet.merged_cells.ranges:
         if merged.min_col != merged.max_col or not (left <= merged.min_col <= right):
             continue
         if merged.min_row <= header_row or merged.min_row > bottom:
             continue
-        value = matrix[merged.min_row - 1][merged.min_col - 1]
+        column = merged.min_col - left
+        value = rows[merged.min_row - first_row][column]
         for row in range(merged.min_row, min(merged.max_row, bottom) + 1):
-            matrix[row - 1][merged.min_col - 1] = value
+            rows[row - first_row][column] = value
 
 
 def _make_headers(values: Iterable[Any]) -> list[str]:
@@ -154,10 +137,11 @@ def _make_headers(values: Iterable[Any]) -> list[str]:
         base = str(value).strip() if not _blank(value) else f"字段{index}"
         base = re.sub(r"\s+", " ", base)
         candidate = base
+        stem = base.lstrip('_') or f"字段{index}"
         count = 1
         while candidate.casefold() in seen or candidate.startswith('_'):
             count += 1
-            candidate = f"{base.lstrip('_')}_{count}"
+            candidate = f"{stem}_{count}"
         seen[candidate.casefold()] = 1
         headers.append(candidate)
     return headers
@@ -173,89 +157,79 @@ def _table_title(rows: list[list[Any]], header_index: int, fallback: str) -> str
     return fallback
 
 
+def _discover_worksheet(file_path, worksheet):
+    populated = _populated_rows(worksheet)
+    for band_number, (top, bottom) in enumerate(_consecutive_bands(populated), start=1):
+        if bottom == top:
+            continue
+        columns = {column for row in range(top, bottom + 1) for column in populated[row]}
+        for left, right in _consecutive_bands(columns):
+            if right == left:
+                continue
+            rows = [[populated[row].get(column) for column in range(left, right + 1)]
+                    for row in range(top, bottom + 1)]
+            search_limit = min(len(rows) - 1, 12)
+            scores = [(_header_score(rows, idx), idx) for idx in range(search_limit)]
+            score, header_idx = max(scores, key=lambda pair: (pair[0], -pair[1]), default=(-1, -1))
+            if score < 0:
+                continue
+            header_row = top + header_idx
+            _fill_merged_labels(worksheet, rows, top, header_row, left, right)
+            headers = _make_headers(rows[header_idx])
+            body = [row for row in rows[header_idx + 1:] if _row_nonempty(row)]
+            frame = pd.DataFrame(body, columns=headers).dropna(axis=1, how="all").dropna(axis=0, how="all")
+            if frame.empty or frame.shape[1] < 2:
+                continue
+            fallback = f"{worksheet.title} 表{band_number}"
+            title = _table_title(rows, header_idx, fallback)
+            if title == fallback:
+                # A title may be separated from its header by blank rows.
+                for prior in range(top - 1, max(0, top - 5), -1):
+                    previous = populated.get(prior, {})
+                    values = [previous[col] for col in sorted(previous) if left <= col <= right]
+                    if not values:
+                        continue
+                    if len(values) == 1 and isinstance(values[0], str) and len(values[0]) <= 80:
+                        title = values[0]
+                    break
+            range_ref = (f"{get_column_letter(left)}{header_row}:"
+                         f"{get_column_letter(right)}{header_row + len(body)}")
+            yield ParsedTable(file_path, worksheet.title, title, range_ref, frame.reset_index(drop=True), header_row)
+
+
 def discover_tables(path: str | Path, rules=None, notices=None) -> list[ParsedTable]:
     file_path = Path(path).resolve()
-    workbook = load_workbook(file_path, data_only=True, read_only=False)
-    discovered: list[ParsedTable] = []
-    try:
-        for worksheet in workbook.worksheets:
-            matrix = [[_clean(value) for value in row] for row in worksheet.iter_rows(values_only=True)]
-            if not matrix:
-                continue
-            for band_number, (top, bottom) in enumerate(_active_row_bands(matrix), start=1):
-                if bottom - top < 1:
-                    continue
-                for left, right in _column_bands(matrix, top, bottom):
-                    if right - left < 1:
-                        continue
-                    rows = [row[left : right + 1] for row in matrix[top : bottom + 1]]
-                    search_limit = min(len(rows) - 1, 12)
-                    scores = [(_header_score(rows, idx), idx) for idx in range(search_limit)]
-                    score, header_idx = max(scores, key=lambda pair: (pair[0], -pair[1]), default=(-1, -1))
-                    if score < 0:
-                        continue
-                    _fill_merged_labels(worksheet, matrix, top + header_idx + 1, left + 1, right + 1, bottom + 1)
-                    rows = [row[left : right + 1] for row in matrix[top : bottom + 1]]
-                    headers = _make_headers(rows[header_idx])
-                    body = rows[header_idx + 1 :]
-                    body = [row for row in body if _row_nonempty(row) >= 1]
-                    if not body:
-                        continue
-                    frame = pd.DataFrame(body, columns=headers)
-                    frame = frame.dropna(axis=1, how="all").dropna(axis=0, how="all")
-                    if frame.empty or frame.shape[1] < 2:
-                        continue
-                    frame = frame.reset_index(drop=True)
-                    fallback = f"{worksheet.title} 表{band_number}"
-                    title = _table_title(rows, header_idx, fallback)
-                    if title == fallback and top > 0:
-                        # A title may be separated from its header by blank rows.
-                        for prior in range(top - 1, max(-1, top - 5), -1):
-                            previous = [v for v in matrix[prior][left:right+1] if not _blank(v)]
-                            if not previous:
-                                continue
-                            if len(previous) == 1 and isinstance(previous[0], str) and len(previous[0]) <= 80:
-                                title = previous[0]
-                            break
-                    start_row = top + header_idx + 1
-                    end_row = top + header_idx + 1 + len(body)
-                    range_ref = f"{get_column_letter(left + 1)}{start_row}:{get_column_letter(left + len(headers))}{end_row}"
-                    discovered.append(
-                        ParsedTable(file_path, worksheet.title, title, range_ref, frame, start_row)
-                    )
-    finally:
-        workbook.close()
     rules = rules if rules is not None else (json.loads(OVERRIDES.read_text(encoding='utf-8')) if OVERRIDES.exists() else {})
     relevant = [rule for rule in rules.values() if Path(rule['file']).resolve() == file_path]
-    if relevant:
-        from openpyxl.utils.cell import range_boundaries
-        book = load_workbook(file_path, read_only=False, data_only=True)
-        try:
-            for rule in relevant:
-                if rule['sheet'] not in book.sheetnames:
-                    message = f"手动识别规则的工作表“{rule['sheet']}”已不存在，已跳过该规则并识别当前工作表"
-                    if notices is not None:
-                        notices.append(message)
-                    else:
-                        import warnings
-                        warnings.warn(message, UserWarning, stacklevel=2)
-                    continue
-                left, top, right, bottom = range_boundaries(rule['range'])
-                sheet = book[rule['sheet']]
-                if bottom > sheet.max_row or right > sheet.max_column:
-                    raise ValueError('指定区域超过工作表有效范围')
-                matrix = [[_clean(v) for v in row] for row in sheet.iter_rows(values_only=True)]
-                _fill_merged_labels(sheet, matrix, top, left, right, bottom)
-                values = [row[left - 1:right] for row in matrix[top - 1:bottom]]
-                frame = pd.DataFrame(values[1:], columns=_make_headers(values[0]))
-                if frame.empty:
-                    raise ValueError('指定区域没有数据')
-                original = rule.get('original', rule['range']).split(':')[0]
-                discovered = [t for t in discovered if not (t.sheet_name == rule['sheet'] and t.range_ref.split(':')[0] in (original, rule['range'].split(':')[0]))]
-                discovered.append(ParsedTable(file_path, rule['sheet'], rule['name'], rule['range'], frame, top))
-        finally:
-            book.close()
-    return discovered
+    workbook = load_workbook(file_path, data_only=True, read_only=False)
+    try:
+        discovered = [table for sheet in workbook.worksheets for table in _discover_worksheet(file_path, sheet)]
+        for rule in relevant:
+            if rule['sheet'] not in workbook.sheetnames:
+                message = f"手动识别规则的工作表“{rule['sheet']}”已不存在，已跳过该规则并识别当前工作表"
+                if notices is not None:
+                    notices.append(message)
+                else:
+                    import warnings
+                    warnings.warn(message, UserWarning, stacklevel=2)
+                continue
+            from openpyxl.utils.cell import range_boundaries
+            left, top, right, bottom = range_boundaries(rule['range'])
+            sheet = workbook[rule['sheet']]
+            if bottom > sheet.max_row or right > sheet.max_column:
+                raise ValueError('指定区域超过工作表有效范围')
+            values = [[_clean(v) for v in row] for row in sheet.iter_rows(
+                min_row=top, max_row=bottom, min_col=left, max_col=right, values_only=True)]
+            _fill_merged_labels(sheet, values, top, top, left, right)
+            frame = pd.DataFrame(values[1:], columns=_make_headers(values[0]))
+            if frame.empty:
+                raise ValueError('指定区域没有数据')
+            original = rule.get('original', rule['range']).split(':')[0]
+            discovered = [t for t in discovered if not (t.sheet_name == rule['sheet'] and t.range_ref.split(':')[0] in (original, rule['range'].split(':')[0]))]
+            discovered.append(ParsedTable(file_path, rule['sheet'], rule['name'], rule['range'], frame, top))
+        return discovered
+    finally:
+        workbook.close()
 
 
 def infer_series_type(series: pd.Series) -> str:

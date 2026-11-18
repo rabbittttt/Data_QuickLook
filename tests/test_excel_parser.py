@@ -1,13 +1,43 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 from excel_parser import discover_tables
 
 
 class ExcelParserTest(unittest.TestCase):
+    def test_sparse_sheet_and_underscore_only_headers(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'sparse.xlsx'
+            book = Workbook()
+            sheet = book.active
+            sheet.append(['_', '__', '销量'])
+            sheet.append(['M8', 'Max', 100])
+            sheet.append(['M9', 'Pro', 200])
+            sheet['AA100000'], sheet['AB100000'] = '年份', '交付量'
+            sheet['AA100001'], sheet['AB100001'] = 2026, 300
+            sheet['XFD1048576'].number_format = '0.00'
+            book.save(path)
+            book.close()
+            rules = {'crop': {'file': str(path), 'sheet': sheet.title, 'range': 'A1:C3', 'name': '销量'}}
+            iter_rows = Worksheet.iter_rows
+
+            def bounded_rows(worksheet, *args, **kwargs):
+                self.assertIn('max_row', kwargs)
+                self.assertIn('max_col', kwargs)
+                return iter_rows(worksheet, *args, **kwargs)
+
+            with patch.object(Worksheet, 'iter_rows', bounded_rows):
+                tables = discover_tables(path, rules=rules)
+            by_range = {table.range_ref: table for table in tables}
+            self.assertEqual(set(by_range), {'A1:C3', 'AA100000:AB100001'})
+            self.assertEqual(by_range['A1:C3'].dataframe.columns.tolist(), ['字段1_2', '字段2_2', '销量'])
+            self.assertEqual(by_range['AA100000:AB100001'].dataframe.iloc[0]['交付量'], 300)
+
     def test_merged_parent_keeps_children_and_does_not_fill_ordinary_blanks(self):
         from datetime import datetime
         with TemporaryDirectory() as directory:

@@ -250,6 +250,19 @@ class MultiSourceHTTPTests(unittest.TestCase):
         self.assertEqual(len(catalog['tables']), 3)
         self.assertEqual([table['file_path'] for table in catalog['tables'] if table['archived']], [str(local)])
 
+    def test_catalog_can_read_committed_tables_during_a_large_write(self):
+        self.store.enable_concurrent_reads()
+        with self.store.connect() as writer:
+            writer.execute('PRAGMA cache_size=5')
+            writer.execute('BEGIN IMMEDIATE')
+            writer.execute('DELETE FROM datasets')
+            writer.execute('CREATE TABLE unfinished_import(payload)')
+            writer.execute('INSERT INTO unfinished_import VALUES (zeroblob(4194304))')
+            code, catalog = self.request('catalog')
+            self.assertEqual(code, 200, catalog)
+            self.assertEqual(len(catalog['tables']), 2)
+            writer.rollback()
+
     def test_managed_upload_survives_reopening_database_and_preserves_legacy(self):
         uploads = self.config_file.parent / 'uploads'
         code, result = self.upload(uploads)

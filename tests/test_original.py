@@ -1,11 +1,51 @@
 import tempfile
 import unittest
 from pathlib import Path
+from zipfile import ZipFile
+
 from openpyxl import Workbook
 from server import original_sheet, workbook_info
 
 
 class OriginalSheetTests(unittest.TestCase):
+    def test_only_selected_sheet_cells_are_decoded_and_dimensions_are_verified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'source.xlsx'
+            book = Workbook()
+            book.active['B3'] = '=6+7'
+            book.active.merge_cells('B3:D3')
+            book.active['BK101'] = 42
+            hidden = book.create_sheet('隐藏表')
+            hidden.sheet_state = 'veryHidden'
+            hidden['A1'] = 789
+            book.save(source)
+            book.close()
+
+            for dimension in (b'<dimension ref="A1:A1"/>', b''):
+                with self.subTest(dimension=dimension):
+                    path = root / 'preview.xlsx'
+                    with ZipFile(source) as original, ZipFile(path, 'w') as fixture:
+                        for name in original.namelist():
+                            content = original.read(name)
+                            if name == 'xl/worksheets/sheet1.xml':
+                                content = content.replace(b'<dimension ref="B3:BK101"/>', dimension)
+                                content = content.replace(b'<f>6+7</f><v></v>', b'<f>6+7</f><v>13</v>')
+                            if name == 'xl/worksheets/sheet2.xml':
+                                # The other sheet's header is usable, but decoding its cells fails.
+                                content = content.replace(b'<v>789</v>', b'<v>broken-number</v>')
+                            fixture.writestr(name, content)
+
+                    before = path.read_bytes()
+                    preview = original_sheet(path)
+                    self.assertEqual(preview['sheets'], ['Sheet', '隐藏表'])
+                    self.assertEqual(preview['rows'][2][1], 13)
+                    self.assertEqual(preview['merges'], [[2, 3, 4, 3]])
+                    self.assertEqual((preview['max_row'], preview['max_col']), (101, 63))
+                    last = original_sheet(path, start=1000, column=1000)
+                    self.assertEqual((last['start'], last['column'], last['rows']), (101, 63, [[42]]))
+                    self.assertEqual(path.read_bytes(), before)
+
     def test_unrecognized_sheets_positions_and_paging(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'source.xlsx'
