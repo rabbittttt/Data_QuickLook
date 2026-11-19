@@ -486,3 +486,7 @@ main { padding-top: var(--dashboard-gap); }
 
 .workspace-header .brand, .compact-toolbar .brand { gap: 8px; font-weight: 700; line-height: 1.15; letter-spacing: normal; }
 .compact-toolbar .brand strong { font-weight: inherit; }
+
+.workspace-header .brand, .compact-toolbar .brand, #nav button, .sheet-tabs button, main .pagehead h1 {
+  font-family: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+}
