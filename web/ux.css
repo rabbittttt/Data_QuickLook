@@ -405,3 +405,35 @@ table,
 .workspace-header .brand small, #nav em,
 .studio-settings-heading small,
 .tag { font-size: var(--type-note); }
+
+#nav { gap: 6px; }
+
+#nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-body);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: none;
+  transition: color 160ms, background-color 160ms;
+}
+#nav button:not(:disabled):hover { background: #f3f4f6; color: var(--ink); }
+#nav button[aria-current=page]:not(:disabled) { background: var(--soft); color: #2049d4; font-weight: 600; }
+#nav button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+#nav button svg { width: 18px; height: 18px; flex: 0 0 18px; color: inherit; opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #nav button { transition: none; }
+}
+@media (max-width: 760px) {
+  #nav button { justify-content: flex-start; }
+}
