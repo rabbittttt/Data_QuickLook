@@ -483,3 +483,6 @@ main { padding-top: var(--dashboard-gap); }
   }
   #compactNav #nav button { flex: none; }
 }
+
+.workspace-header .brand, .compact-toolbar .brand { gap: 8px; font-weight: 700; line-height: 1.15; letter-spacing: normal; }
+.compact-toolbar .brand strong { font-weight: inherit; }
