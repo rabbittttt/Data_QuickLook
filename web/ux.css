@@ -359,11 +359,12 @@ main .pagehead h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.035em
 .stat-head svg{width:18px;height:18px;flex:none;color:var(--primary)}
 .stat b{margin:7px 0 4px;font-size:28px;font-weight:700;letter-spacing:-.04em;line-height:1.18;overflow-wrap:anywhere}
 .stat>span{display:block;line-height:1.5}
-.overview-cards{grid-template-columns:minmax(0,5fr) minmax(0,3fr);gap:16px}
+.overview-cards{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:16px}
+.overview-cards .card{display:flex;flex-direction:column}
 .overview-cards .cardtop{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px 10px;padding:16px 17px 0}
 .overview-cards .cardtop h3{font-size:15px;font-weight:650}
 .overview-cards .cardtop p{grid-column:1/-1;margin:0}
-.overview-cards .cardfoot{gap:8px;flex-wrap:wrap}
+.overview-cards .cardfoot{margin-top:auto;gap:8px;flex-wrap:wrap}
 .card,.panel,.numeric-details{box-shadow:var(--shadow-card)}
 .tag{border-radius:999px}
 @media(min-width:761px){
@@ -372,7 +373,6 @@ main .pagehead h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.035em
 }
 @media(max-width:930px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .overview-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:760px){
   main .pagehead:not(:empty){align-items:center;margin-bottom:14px}
