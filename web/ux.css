@@ -437,3 +437,49 @@ table,
 @media (max-width: 760px) {
   #nav button { justify-content: flex-start; }
 }
+
+/* Shared vertical rhythm of the embedded dashboards. */
+:root {
+  --toolbar-height: 64px;
+  --navigation-height: 56px;
+  --dashboard-gap: 16px;
+}
+@media (max-width: 640px) {
+  :root { --dashboard-gap: 12px; }
+}
+.compact-header { display: none; }
+main { padding-top: var(--dashboard-gap); }
+@media (min-width: 761px) {
+  .workspace-header {
+    grid-template-rows: var(--toolbar-height) var(--navigation-height);
+    padding-block: 0;
+    row-gap: 0;
+    border-bottom: 0;
+    box-shadow: inset 0 -1px var(--line);
+  }
+  .sidebar-data-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .sidebar-data-actions > * { flex: none; }
+  .sidebar-data-actions .top-actions { flex-wrap: nowrap; }
+  #nav { height: var(--navigation-height); align-items: center; flex-wrap: nowrap; padding-block: 0; overflow-x: auto; }
+}
+@media (max-width: 760px) {
+  .compact-header {
+    display: block;
+    padding-inline: 12px;
+    background: var(--card);
+    box-shadow: inset 0 -1px var(--line);
+  }
+  .compact-toolbar {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    height: var(--toolbar-height);
+  }
+  .compact-toolbar .brand { display: flex; align-items: center; gap: 8px; padding: 0; font-size: var(--type-title); color: var(--ink); }
+  .compact-toolbar .brandmark { width: 28px; height: 28px; }
+  .compact-toolbar .sidebar-toggle { margin: 0; }
+  #compactNav { height: var(--navigation-height); }
+  #compactNav #nav {
+    display: flex; flex-wrap: nowrap; align-items: center;
+    margin: 0; padding: 0; height: 100%; min-width: 0; overflow-x: auto; scrollbar-width: thin;
+  }
+  #compactNav #nav button { flex: none; }
+}

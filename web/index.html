@@ -23,7 +23,6 @@
 </head>
 <body>
 <a class="skip-link" href="#main" onclick="event.preventDefault();document.getElementById('main').focus();">跳到主要内容</a>
-<button id="menuToggle" class="sidebar-toggle" aria-controls="workspaceSidebar" aria-expanded="false">菜单</button>
 <button id="sidebarBackdrop" class="sidebar-backdrop" hidden aria-label="关闭菜单" tabindex="-1"></button>
 <header id="workspaceSidebar" class="workspace-header" aria-label="导航与数据操作">
   <div class="sidebar-heading"><a class="brand" href="#home" aria-label="数据速查，返回数据概览"><img class="brandmark" src="favicon.svg" width="34" height="34" alt=""><span>数据速查<small>DATA QUICKLOOK</small></span></a><button id="sidebarClose" class="sidebar-close" aria-label="关闭菜单">×</button></div>
@@ -42,7 +41,11 @@
   </section>
   <div class="workspace-tools"><span class="workspace-label">本地工作空间</span><span class="storage-note"><span class="dot"></span> 数据保存在本机</span></div>
 </header>
-<div class="app"><main id="main" tabindex="-1"></main></div>
+<div class="app"><div class="compact-header">
+  <div class="compact-toolbar"><a class="brand" href="#home" aria-label="数据速查，返回数据概览"><img class="brandmark" src="favicon.svg" width="28" height="28" alt=""><strong>数据速查</strong></a><button id="menuToggle" class="sidebar-toggle" aria-controls="workspaceSidebar" aria-expanded="false">菜单</button></div>
+  <div id="compactNav"></div>
+</div>
+<main id="main" tabindex="-1"></main></div>
 <dialog id="dialog"><div id="dialogBody"></div><form method="dialog"><button class="dialog-close" aria-label="关闭对话框">×</button></form></dialog><div id="toast" role="status" aria-live="polite"></div>
 <dialog id="importDialog" aria-labelledby="importTitle">
   <h2 id="importTitle">导入 Excel 文件</h2>

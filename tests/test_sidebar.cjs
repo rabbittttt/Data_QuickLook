@@ -19,6 +19,15 @@ function setup({mobile=true}={}){
       this.classList={toggle:(name,value)=>{const add=value??!this.classes.has(name);if(add)this.classes.add(name);else this.classes.delete(name);return add;},contains:name=>this.classes.has(name)};
       if(id)nodes.set('#'+id,this);
     }
+    get nextElementSibling(){
+      const siblings=this.parentNode.children;
+      return siblings[siblings.indexOf(this)+1]||null;
+    }
+    insertBefore(node,reference){
+      if(node.parentNode)node.parentNode.children=node.parentNode.children.filter(child=>child!==node);
+      this.children.splice(reference?this.children.indexOf(reference):this.children.length,0,node);
+      node.parentNode=this;
+    }
     addEventListener(type,callback,options=false){
       if(!this.listeners.has(type))this.listeners.set(type,[]);
       this.listeners.get(type).push({callback,capture:typeof options==='boolean'?options:!!options.capture});
@@ -60,6 +69,7 @@ function setup({mobile=true}={}){
   const hidden=new Node('button','hiddenAction',panel);hidden.hidden=true;
   const negative=new Node('button','negativeAction',panel);negative.tabIndex=-1;
   const app=new Node('div','app',body);app.classes.add('app');
+  new Node('div','compactNav',app);
   const main=new Node('main','main',app);main.setAttribute('tabindex','-1');
   const dialog=new Node('dialog','dialog',body),modalButton=new Node('button','modalButton',dialog);
   const importDialog=new Node('dialog','importDialog',body),importDone=new Node('button','importDone',importDialog);
@@ -110,6 +120,15 @@ test('opening exposes a modal drawer and focuses its close control',()=>{
   assert.equal(ui.panel.getAttribute('role'),'dialog');assert.equal(ui.panel.getAttribute('aria-modal'),'true');
   assert.equal(ui.app.inert,true);assert.equal(ui.toggle.inert,true);assert.equal(ui.backdrop.hidden,false);
   assert.equal(ui.body.classList.contains('sidebar-open'),true);assert.equal(ui.document.activeElement,ui.close);
+});
+
+test('the same mobile navigation stays usable before, during and after opening the drawer',()=>{
+  const ui=setup(),nav=ui.compare.parentNode;
+  assert.equal(nav.parentNode.id,'compactNav');
+  ui.click(ui.compare);assert.equal(ui.routes.at(-1).page,'compare');
+  ui.click(ui.toggle);assert.equal(nav.parentNode,ui.panel);
+  ui.click(ui.homeText);assert.equal(nav.parentNode.id,'compactNav');
+  ui.resize(false);assert.equal(nav.parentNode,ui.panel);
 });
 
 test('Escape, backdrop and close action hide the drawer and return focus',()=>{

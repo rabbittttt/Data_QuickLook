@@ -10,12 +10,19 @@
   const main=document.querySelector('.app');
   const search=document.querySelector('#search');
   const mobile=window.matchMedia('(max-width:760px)');
+  const navigation=document.querySelector('#nav');
+  const compactNav=document.querySelector('#compactNav');
+  const followingSection=navigation.nextElementSibling;
   let open=false;
   const modalOpen=()=>!!document.querySelector('dialog[open]');
   const focusMain=()=>document.querySelector('#main').focus({preventScroll:true});
 
   function setOpen(value,{restoreFocus=true,focusSearch=false}={}){
     open=mobile.matches&&value;
+    const navParent=mobile.matches&&!open?compactNav:panel;
+    if(navigation.parentNode!==navParent){
+      navParent.insertBefore(navigation,navParent===panel?followingSection:null);
+    }
     document.body.classList.toggle('sidebar-open',open);
     toggle.setAttribute('aria-expanded',String(open));
     backdrop.hidden=!open;
@@ -85,7 +92,8 @@
   const modeChanged=()=>{
     const active=document.activeElement;
     setOpen(false,{restoreFocus:false});
-    if(mobile.matches&&panel.contains(active))toggle.focus({preventScroll:true});
+    if(navigation.contains(active))active.focus({preventScroll:true});
+    else if(mobile.matches&&panel.contains(active))toggle.focus({preventScroll:true});
     else if(!mobile.matches&&(active===toggle||active===close))focusMain();
   };
   if(mobile.addEventListener)mobile.addEventListener('change',modeChanged);
