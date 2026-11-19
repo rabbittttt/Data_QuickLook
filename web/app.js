@@ -104,7 +104,6 @@ async function refreshSyncProgress(){
 function go(page,{background=false}={}){
   if(page==='raw'||page==='health')page='explore';
   const moved=state.page!==page;state.page=page;location.hash=page;
-  $('#overviewActions').hidden=page!=='home';
   $('#nav').querySelectorAll('button').forEach(b=>{const active=b.dataset.page===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
   const rendering=render(),token=renderToken;
   return rendering.then(()=>{if(!background&&moved&&token===renderToken&&!$('#dialog')?.open){const main=$('#main');main.setAttribute('tabindex','-1');main.focus({preventScroll:true});}}).catch(e=>{if(token!==renderToken)return;console.error('页面加载失败',e);toast(e.message);$('#main').innerHTML=empty('页面暂时无法加载',esc(e.message),'<button onclick="location.reload()">重新加载</button>');});
@@ -311,7 +310,12 @@ function saved(){
 }
 async function search(token){$('#main').innerHTML=header('SEARCH / 全局搜索','搜索「'+state.query+'」','同时查找文件、表名、字段以及单元格内容。')+'<div class="loading">正在搜索全部已导入数据…</div>';const result=await api('search?q='+encodeURIComponent(state.query));if(token!==renderToken)return;const resultSummary=`找到 ${result.hits.length} 个相关数据区域${result.hits.length>60?'，当前显示前 60 个；请缩小关键词查看其他结果。':'。'}每表展示最多 3 条示例。`;$('#main').innerHTML=header('SEARCH / 全局搜索','搜索「'+state.query+'」',resultSummary)+`<p class="search-summary" role="status">${resultSummary}</p><div class="results">${result.hits.slice(0,60).map(({table:t,rows})=>`<article class="panel"><div class="sectionhead" style="margin:0 0 12px"><div><h3>${esc(t.table_name)}</h3><p>${esc(t.relative_path)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</p></div><button data-view="${t.id}">浏览数据 →</button></div><p class="meta">${t.fields.filter(f=>state.query.split(/\s+/).some(w=>f.name.includes(w))).slice(0,8).map(f=>`<button class="fieldchip" data-add="${t.id}" data-metric="${esc(f.name)}">${esc(f.name)} ＋</button>`).join('')}</p>${rows.map(row=>`<div class="resultrow"><span class="tag">行 ${esc(row._source_row)}</span> ${Object.entries(row).filter(([k])=>!k.startsWith('_')).slice(0,8).map(([k,v])=>`${esc(k)} <b>${esc(fmt(v))}</b>`).join(' · ')}</div>`).join('')}</article>`).join('')}</div>`+(result.hits.length?'':empty('没有找到匹配数据',''));bindTableActions();}
 $('#allData').onclick=()=>go('explore');
-$('#startCompare').onclick=()=>go('compare');
+$('#startCompare').onclick=()=>{
+  const builder=state.page==='compare'?$('#studioBuilderShell'):null;
+  if(builder){builder.open=true;return;}
+  state.openBuilder=true;
+  go('compare');
+};
 $('#nav').onclick=e=>{const b=e.target.closest('[data-page]');if(b)go(b.dataset.page);};$('#syncButton').onclick=async()=>{try{$('#syncButton').disabled=true;await api('sync',{});toast('正在更新已导入数据');trackRequestedSync();}catch(e){$('#syncButton').disabled=false;toast(e.message);}};$('#search').oninput=e=>{clearTimeout(searchTimer);state.query=e.target.value.trim();searchTimer=setTimeout(()=>{if(state.query)go('search',{background:true});else go('home',{background:true});},450);};document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){e.preventDefault();$('#search').focus();}});
 window.addEventListener('DOMContentLoaded',async()=>{
   async function loadCatalog(){

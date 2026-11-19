@@ -165,8 +165,7 @@ button.link{min-height:32px;padding:4px 6px}
 .sync-meta{display:flex;flex-direction:column;gap:1px;min-width:0}
 .refresh-period{font-size:11px;line-height:1.5;color:var(--muted)}
 #syncStatus{display:block;max-width:115px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
-.workspace-header .top-actions,.overview-actions:not([hidden]){display:flex;flex-wrap:wrap;gap:6px}
-.workspace-header .top-actions{margin:0}
+.workspace-header .top-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0}
 .workspace-header .top-actions button{min-width:0;min-height:34px;padding:6px 10px;border-radius:999px;font-size:12px;white-space:nowrap}
 .workspace-header .top-actions button:not(.primary){border-color:var(--line);background:transparent;color:var(--ink)}
 .workspace-header .top-actions button:not(.primary):hover{background:var(--soft);border-color:var(--primary);color:var(--primary)}
