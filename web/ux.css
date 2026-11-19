@@ -15,7 +15,7 @@ h3{font-size:15px;line-height:1.45}
 .pagehead{align-items:center;gap:12px;margin-bottom:16px}
 .pagehead h1{font-size:21px;line-height:1.35;margin:2px 0 4px}
 .pagehead p{font-size:13px;line-height:1.5;margin-top:3px}
-.eyebrow{font-size:10px;letter-spacing:1.4px;margin-bottom:3px}
+.eyebrow{font-size:var(--type-note);letter-spacing:1.4px;margin-bottom:3px}
 .meta,small,.muted{color:var(--text-secondary)}
 .meta{line-height:1.55}
 .pagehead p,.sectionhead h2,.sectionhead h3,.cardtop h3,.cardtop p,.saved-card h3,.resultrow,.meta,.notice{overflow-wrap:anywhere}
@@ -92,7 +92,7 @@ button.link{min-height:32px;padding:4px 6px}
 .mapping-hint .meta{margin:0}
 .mapping-hint .link{align-self:flex-start}
 #mappingSummary{font-size:13px}
-.metric-source{display:inline-block;margin-left:8px;color:var(--text-secondary);font-size:11px;white-space:nowrap}
+.metric-source{display:inline-block;margin-left:8px;color:var(--text-secondary);font-size:var(--type-note);white-space:nowrap}
 #metricChoices .series-choices{max-height:174px;overflow-y:auto;overscroll-behavior:contain}
 .metric-axis-fields{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 .metric-preview{display:grid;gap:5px;margin:10px 0;font-size:12px;line-height:1.5}
@@ -149,11 +149,11 @@ button.link{min-height:32px;padding:4px 6px}
 .sidebar-heading{grid-area:brand;display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
 .workspace-header .brand{color:var(--ink);padding:0;white-space:nowrap;letter-spacing:0;font-size:17px;gap:8px;min-width:0}
 .workspace-header .brandmark{width:28px;height:28px}
-.workspace-header .brand small{color:var(--muted);display:block;font-size:8px;letter-spacing:1px}
+.workspace-header .brand small{color:var(--muted);display:block;font-size:var(--type-note);letter-spacing:1px}
 .workspace-header .search{grid-area:search;width:100%;min-width:0;max-width:340px;min-height:34px;gap:6px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:#f8f9fb;color:var(--muted)}
 .workspace-header .search input{width:100%;min-width:0;min-height:32px;padding:5px 0;border:0;background:transparent;color:#0b0d17;font-size:12px}
 .workspace-header .search input::placeholder{color:#606775;opacity:1}
-.workspace-header .search kbd{display:inline-block;font-size:10px;padding:0 4px;color:#606775;border-color:#8490a2}
+.workspace-header .search kbd{display:inline-block;font-size:var(--type-note);padding:0 4px;color:#606775;border-color:#8490a2}
 .workspace-header .search:focus-within{outline:3px solid #2859f5;outline-offset:2px;border-color:#2859f5}
 .workspace-header .search input:focus{outline:none}
 #nav{grid-area:nav;display:flex;flex-wrap:wrap;gap:5px;margin:0;padding:0 0 7px;overflow:visible}
@@ -163,13 +163,13 @@ button.link{min-height:32px;padding:4px 6px}
 .nav-icon{width:17px;height:17px;flex:0 0 17px;fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round}
 .sidebar-data-actions{grid-area:actions;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
 .sync-meta{display:flex;flex-direction:column;gap:1px;min-width:0}
-.refresh-period{font-size:11px;line-height:1.5;color:var(--muted)}
-#syncStatus{display:block;max-width:115px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.refresh-period{font-size:var(--type-note);line-height:1.5;color:var(--muted)}
+#syncStatus{display:block;max-width:115px;font-size:var(--type-note);line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
 .workspace-header .top-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0}
 .workspace-header .top-actions button{min-width:0;min-height:34px;padding:6px 10px;border-radius:999px;font-size:12px;white-space:nowrap}
 .workspace-header .top-actions button:not(.primary){border-color:var(--line);background:transparent;color:var(--ink)}
 .workspace-header .top-actions button:not(.primary):hover{background:var(--soft);border-color:var(--primary);color:var(--primary)}
-.workspace-tools{grid-area:tools;min-width:0;font-size:11px;color:var(--muted)}
+.workspace-tools{grid-area:tools;min-width:0;font-size:var(--type-note);color:var(--muted)}
 .workspace-label,.storage-note{display:none}
 .workspace-tools button{width:100%;min-height:34px;background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:999px;white-space:nowrap;font-size:12px}
 .workspace-tools button:hover{background:var(--soft);border-color:var(--primary);color:var(--primary)}
@@ -381,3 +381,27 @@ main .pagehead h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.035em
   .stat b{font-size:25px}
   .overview-cards{grid-template-columns:minmax(0,1fr);gap:12px}
 }
+
+/* Workbench typography */
+:root {
+  --type-title: 24px;
+  --type-section: 16px;
+  --type-body: 14px;
+  --type-table: 13px;
+  --type-note: 12px;
+}
+@media (max-width: 640px) {
+  :root { --type-title: 20px; }
+}
+.workspace-header .brand, main .pagehead h1, h1 { font-size: var(--type-title); }
+h2,
+.chart-section-heading h2,
+.hero h2,
+.overview-cards .cardtop h3,
+.recommend-grid h3 { font-size: var(--type-section); }
+body, #nav button, button, input, select, textarea { font-size: var(--type-body); }
+table,
+.raw-grid tbody th, td, th { font-size: var(--type-table); }
+.workspace-header .brand small, #nav em,
+.studio-settings-heading small,
+.tag { font-size: var(--type-note); }
