@@ -384,14 +384,11 @@ main .pagehead h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.035em
 
 /* Workbench typography */
 :root {
-  --type-title: 24px;
+  --type-title: 19px;
   --type-section: 16px;
   --type-body: 14px;
   --type-table: 13px;
   --type-note: 12px;
-}
-@media (max-width: 640px) {
-  :root { --type-title: 20px; }
 }
 .workspace-header .brand, main .pagehead h1, h1 { font-size: var(--type-title); }
 h2,
