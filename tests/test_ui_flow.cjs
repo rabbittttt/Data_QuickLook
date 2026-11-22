@@ -200,19 +200,25 @@ test('live search and clearing the query keep focus in the search input',async()
     assert.equal(c.state.page,page);assert.equal($('#main').focusCount,0,'search updates must not invoke route focus');
   }
 });
-test('truncated search results disclose the shown count and a way to narrow results',async()=>{
-  const $=nodes(),headings=[];let count=77;
-  const c=vm.createContext({$,state:{query:'SKU'},renderToken:1,header:(_eyebrow,_title,subtitle)=>{headings.push(subtitle);return subtitle;},api:async()=>({hits:Array.from({length:count},(_,id)=>({table:{id,table_name:'SKU',relative_path:'source.xlsx',sheet_name:'Sheet1',range_ref:'A1:B3',fields:[]},rows:[]}))}),esc:String,fmt:String,empty:()=>'',bindTableActions:()=>{}});
+test('search discloses omitted regions separately from limited cell scans',async()=>{
+  const $=nodes();
+  const makeHits=count=>Array.from({length:count},(_,id)=>({table:{id,table_name:'SKU',relative_path:'source.xlsx',sheet_name:'Sheet1',range_ref:'A1:B3',fields:[]},rows:[]}));
+  let result={hits:makeHits(60),found_count:77,results_truncated:true,content_truncated:false};
+  const c=vm.createContext({$,state:{query:'SKU'},renderToken:1,header:title=>title,api:async()=>result,esc:String,fmt:String,empty:title=>title,bindTableActions:()=>{}});
   vm.runInContext(snippet('async function search(', "$('#allData').onclick"),c);
-  await c.search(1);assert.match(headings.at(-1),/77.*当前显示前 60.*缩小关键词/);assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,60);
-  count=2;await c.search(1);assert.doesNotMatch(headings.at(-1),/前 60/);assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,2);
+  await c.search(1);
+  assert.match($('#main').innerHTML,/找到 77.*当前显示前 60 个。/);
+  assert.equal(($('#main').innerHTML.match(/<article /g)||[]).length,60);
+
+  result={hits:[],found_count:0,results_truncated:false,content_truncated:true};
+  await c.search(1);
+  assert.match($('#main').innerHTML,/达到单元格检索上限.*已检索范围内没有匹配数据/);
+  assert.doesNotMatch($('#main').innerHTML,/当前显示前/);
 });
 test('visible page heading retains one route name without introductory copy',()=>{
   const c=vm.createContext({esc:String});vm.runInContext(snippet('function header(', 'function options('),c);
-  const rendered=c.header('CHART STUDIO / 图表展示','','选表、选参数');
-  assert.match(rendered,/<h1>图表展示<\/h1>/);
-  assert.doesNotMatch(rendered,/CHART STUDIO|选表、选参数/);
-  assert.match(c.header('OVERVIEW / 工作台','从分散的表格，到清晰的比较'),/<h1>工作台<\/h1>/);
+  assert.equal(c.header('图表展示'),'<div class="pagehead"><h1>图表展示</h1></div>');
+  assert.equal(c.header('数据管理'),'<div class="pagehead"><h1>数据管理</h1></div>');
 });
 test('missing selected options remain visible instead of appearing to choose the first valid field',()=>{
   const c=vm.createContext({esc:String});vm.runInContext(snippet('function options(', 'function empty('),c);

@@ -36,7 +36,7 @@ set "VIRTUAL_ENV="
 if exist "%launcherEnvironment%\pyvenv.cfg" set "VIRTUAL_ENV=%launcherEnvironment%"
 
 echo Python: "%quicklookPython%"
-"%quicklookPython%" -c "import importlib.util, sys; sys.exit(1 if sys.version_info < (3, 10) or any(importlib.util.find_spec(n) is None for n in ('pandas', 'openpyxl', 'streamlit', 'plotly')) else 0)" >nul 2>nul
+"%quicklookPython%" -c "import importlib.util, sys; sys.exit(1 if sys.version_info < (3, 11) or any(importlib.util.find_spec(n) is None for n in ('pandas', 'openpyxl')) else 0)" >nul 2>nul
 if errorlevel 1 goto missing_dependencies
 
 "%quicklookPython%" server.py --open-browser %*
@@ -57,7 +57,7 @@ pause
 exit /b 1
 
 :missing_dependencies
-echo [ERROR] 所选 Python 需要 3.10 或更新版本，并安装本项目 requirements.txt 中的依赖。
+echo [ERROR] 所选 Python 需要 3.11 或更新版本，并安装 pandas 和 openpyxl。
 echo 请执行："%quicklookPython%" -m pip install -r requirements.txt
 pause
 exit /b 1

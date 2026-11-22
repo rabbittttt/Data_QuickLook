@@ -85,7 +85,7 @@ async function chartStudio(token){
   normalizeSeriesIds(state.basket);
   state.chartPreview=null;
   await compare(token);if(token!==renderToken)return;
-  $('#main .pagehead').outerHTML=header('CHART STUDIO / 图表展示','');
+  $('#main .pagehead').outerHTML=header('图表展示');
   const layout=$('#main .split');layout.className='studio-layout';layout.firstElementChild.remove();
   const settingsCard=document.createElement('section');settingsCard.className='panel studio-settings-card';settingsCard.setAttribute('aria-label','图表设置');
   const seriesToolbar=document.createElement('div');seriesToolbar.className='series-toolbar';seriesToolbar.innerHTML='<div>'+(state.chartUndo?'<button id="undoChartChange">撤销上次图表改动</button> ':'')+'<button id="studioNew">新建图表 / 对比 ＋</button><button id="studioRaw">查看原始表格</button></div>';settingsCard.append(seriesToolbar);
@@ -382,7 +382,7 @@ async function inspectRegion(id,token){
   }catch(e){if(panel.isConnected)panel.textContent='无法读取区域：'+e.message;}
 }
 async function rawPage(token){
-  $('#main').innerHTML=header('DATA / 数据管理','数据管理','选择文件和 Sheet，查看或导出原表。')+'<div class="panel" id="originalBody">正在读取文件列表…</div>';
+  $('#main').innerHTML=header('数据管理')+'<div class="panel" id="originalBody">正在读取文件列表…</div>';
   if(state.status?.errors?.length)$('#main .pagehead').insertAdjacentHTML('afterend',`<details class="notice"><summary>${state.status.errors.length} 个文件同步异常</summary>${state.status.errors.map(e=>`<p>${esc(e)}</p>`).join('')}</details>`);
   const {files}=await api('workbooks');if(token!==renderToken)return;
   if(!files.length){$('#originalBody').innerHTML='<p>暂无已导入文件。</p>';return;}

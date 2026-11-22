@@ -11,6 +11,19 @@ assert.equal(context.number('40%'),.4);
 assert.equal(context.number('1,200'),1200);
 assert.equal(context.number(''),null);
 assert.equal(context.number('错误'),null);
+const escapeText=source.slice(source.indexOf('const esc='),source.indexOf('const num='));
+const emptyTemplate=source.slice(source.indexOf('function empty('),source.indexOf('function grid('));
+const csvCell=source.slice(source.indexOf('function csvCell('),source.indexOf('function exportCSV('));
+vm.runInContext(escapeText+emptyTemplate+csvCell,context);
+assert.equal(context.empty('A < B','A & B','<button>重试</button>'),
+  '<div class="panel empty"><h2>A &lt; B</h2><p>A &amp; B</p><button>重试</button></div>');
+for(const value of ['-说明','  +标记','\t等候',' \r\n@标签','\uFEFF＝备注']){
+  assert.equal(context.csvCell(value),'"\t'+value+'"');
+}
+for(const value of [-12.5,'-1,200.50','-12%','+1.2e-3','%收入','|类别']){
+  assert.equal(context.csvCell(value),'"'+value+'"');
+}
+assert.equal(context.csvCell('门店"甲",北京'),'"门店""甲"",北京"');
 const data={rows:[{model:'M8',sales:100},{model:'M8',sales:200},{model:'M9',sales:null},{model:'合计',sales:300}]};
 const specification={dimension:'model',metric:'sales',operation:'求和',excludeTotals:true};
 let result=context.aggregate(data,specification);

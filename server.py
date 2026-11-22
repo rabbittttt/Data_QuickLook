@@ -24,7 +24,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils.cell import coordinate_to_tuple, range_boundaries
 from openpyxl.xml.constants import SHEET_MAIN_NS
-from warehouse import Warehouse
+from warehouse import DatasetNotFound, Warehouse, file_signature
 from source_paths import source_directories, shared_data_root
 from runtime_paths import data_dir
 from shared_sync import SharedFileMonitor
@@ -61,6 +61,14 @@ SHARED_PENDING = {}
 SHARED_FILES = frozenset()
 STATUS = {'busy': False, 'errors': [], 'last_sync': None}
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
+SEARCH_SLOTS = threading.BoundedSemaphore(2)
+SEARCH_QUERY_LIMIT = 256
+SEARCH_RESULT_LIMIT = 60
+SEARCH_ROW_LIMIT = 20_000
+SEARCH_TABLE_ROW_LIMIT = 2_000
+SEARCH_CELL_LIMIT = 250_000
+SEARCH_SECONDS = 3
+IMPORT_SLOTS = threading.BoundedSemaphore(2)
 
 
 def config():
@@ -88,10 +96,8 @@ def sync_worker():
             with SYNC_LOCK:
                 shared_versions = dict(SHARED_PENDING)
                 SHARED_PENDING.clear()
-            with LOCK:
-                files = list(dict.fromkeys([*STORE.uploaded_files(), *shared_versions]))
-                options = {'expected_signatures': shared_versions} if shared_versions else {}
-                result = STORE.sync_files(files, **options)
+            files = list(dict.fromkeys([*STORE.uploaded_files(), *shared_versions]))
+            result = STORE.sync_files(files, expected_signatures=shared_versions, publish_lock=LOCK)
             STATUS.update(asdict(result), last_sync=time.strftime('%Y-%m-%d %H:%M:%S'))
         except Exception as exc:
             STATUS['errors'] = [str(exc)]
@@ -251,6 +257,19 @@ def data(dataset_id):
     return {'columns': list(frame.columns), 'rows': json.loads(frame.to_json(orient='records', date_format='iso', force_ascii=False))}
 
 
+def search_catalog(text):
+    terms = tuple(dict.fromkeys(text.casefold().split()))
+    result = STORE.search(terms, result_limit=SEARCH_RESULT_LIMIT, row_limit=SEARCH_ROW_LIMIT,
+                          table_row_limit=SEARCH_TABLE_ROW_LIMIT, cell_limit=SEARCH_CELL_LIMIT,
+                          seconds=SEARCH_SECONDS)
+    if result['hits']:
+        records = [hit['table'] for hit in result['hits']]
+        sources = source_directories(config())
+        files = workbook_stats((row['file_path'] for row in records), sources, include_unindexed=False)
+        catalog(records, sources=sources, files=files)
+    return result
+
+
 def containing_source(path, sources):
     return next((source for source in sorted(sources, key=lambda p: len(p.parts), reverse=True)
                  if path.is_relative_to(source)), None)
@@ -264,9 +283,11 @@ def source_file_label(path, source, sources):
     return str(Path(label) / relative)
 
 
-def workbook_stats(indexed_paths, sources):
+def workbook_stats(indexed_paths, sources, *, include_unindexed=True):
     # One filesystem check per workbook, even when many tables share it.
-    paths = {Path(path) for path in indexed_paths} | set(STORE.uploaded_files()) | SHARED_FILES
+    paths = {Path(path) for path in indexed_paths}
+    if include_unindexed:
+        paths.update(STORE.uploaded_files(), SHARED_FILES)
     files = {}
     for path in paths:
         if containing_source(path, sources) is None:
@@ -310,6 +331,61 @@ def workbook_info(path):
         book.close()
 
 
+def save_recognition(table, range_ref, name):
+    from excel_parser import discover_tables, OVERRIDES, recognition_rules_snapshot
+
+    if table['archived']:
+        raise ValueError('原文件不可用，无法修正识别区域')
+    if name is not None and not isinstance(name, str):
+        raise ValueError('表名必须是文本')
+    if not isinstance(range_ref, str):
+        raise ValueError('区域必须是单元格范围，例如 A2:F80')
+    left, top, right, bottom = range_boundaries(range_ref)
+    if not all([left, top, right, bottom]) or bottom <= top or right < left:
+        raise ValueError('区域需包含一行表头及至少一行数据，例如 A2:F80')
+
+    source = Path(table['file_path'])
+    signature = file_signature(source)
+    snapshot = recognition_rules_snapshot()
+    rules = json.loads(snapshot) if snapshot is not None else {}
+    key = table['file_path'] + '|' + table['sheet_name'] + '|' + table['range_ref'].split(':')[0]
+    rules[key] = {'file': table['file_path'], 'sheet': table['sheet_name'], 'range': range_ref,
+                  'name': (name or '').strip() or table['table_name'], 'original': table['range_ref']}
+    parsed = discover_tables(source, rules=rules)
+    if not any(area.sheet_name == table['sheet_name'] and area.range_ref == range_ref for area in parsed):
+        raise ValueError('原工作表或区域已变更，请同步后重新选择')
+
+    # Stage both versions on the same volume so publishing and recovery use
+    # atomic replacements, including when the database commit fails.
+    with tempfile.TemporaryDirectory(dir=OVERRIDES.parent, prefix='.recognition-') as temp:
+        staged = Path(temp) / 'next.json'
+        staged.write_text(json.dumps(rules, ensure_ascii=False, indent=2), encoding='utf-8')
+        previous = Path(temp) / 'previous.json'
+        if snapshot is not None:
+            previous.write_bytes(snapshot)
+        published = False
+
+        def publish():
+            nonlocal published
+            os.replace(staged, OVERRIDES)
+            published = True
+
+        with LOCK:
+            if signature != file_signature(source):
+                raise ValueError('工作簿在解析期间已变化，请同步后重新选择')
+            if snapshot != recognition_rules_snapshot():
+                raise ValueError('识别规则在解析期间已变化，请重新提交')
+            try:
+                STORE._replace_file(source, parsed, signature, before_commit=publish)
+            except Exception:
+                if published:
+                    if snapshot is None:
+                        OVERRIDES.unlink()
+                    else:
+                        os.replace(previous, OVERRIDES)
+                raise
+
+
 def sheet_layout(sheet):
     """Stream only the selected sheet's cell coordinates and merge ranges."""
     row_tag, cell_tag, merge_tag = (f'{SHEET_MAIN_NS} {name}' for name in ('row', 'c', 'mergeCell'))
@@ -344,7 +420,7 @@ def sheet_layout(sheet):
     return max_row, max_col, merges
 
 
-def original_sheet(path, sheet_name=None, start=1, column=1):
+def original_sheet(path, sheet_name=None, start=1, column=1, *, page_columns=30):
     """Read source cells independently of inferred tables. Never save the workbook."""
     book = load_workbook(path, read_only=True, data_only=True, keep_links=False)
     try:
@@ -358,7 +434,7 @@ def original_sheet(path, sheet_name=None, start=1, column=1):
         max_row, max_col, ranges = sheet_layout(sheet)
         start = min(max(1, start), max_row)
         column = min(max(1, column), max_col)
-        bottom, right = min(start+79, max_row), min(column+29, max_col)
+        bottom, right = min(start+79, max_row), min(column+page_columns-1, max_col)
         rows = [list(row) for row in sheet.iter_rows(
             min_row=start, max_row=bottom, min_col=column, max_col=right, values_only=True)]
         while len(rows) < bottom - start + 1:
@@ -373,6 +449,20 @@ def original_sheet(path, sheet_name=None, start=1, column=1):
         book.close()
 
 
+def find_dataset(dataset_id):
+    if not isinstance(dataset_id, str) or not dataset_id:
+        raise ValueError('数据表编号无效')
+    table = next((table for table in catalog() if table['id'] == dataset_id), None)
+    if table is None:
+        raise DatasetNotFound('数据表已变更，请重新选择')
+    return table
+
+
+def is_local_host(host):
+    match = re.fullmatch(r'(?:localhost|127\.0\.0\.1|\[::1\])(?::([0-9]{1,5}))?', host, re.IGNORECASE)
+    return bool(match and (match[1] is None or 1 <= int(match[1]) <= 65535))
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / 'web'), **kwargs)
@@ -385,6 +475,12 @@ class Handler(SimpleHTTPRequestHandler):
 
     def parse_request(self):
         if not super().parse_request():
+            return False
+        hosts = self.headers.get_all('Host', [])
+        public_host = urlsplit(PUBLIC_ORIGIN).netloc.casefold() if PUBLIC_ORIGIN else None
+        if len(hosts) != 1 or not (is_local_host(hosts[0]) or hosts[0].casefold() == public_host):
+            self.close_connection = True
+            self.send_json({'error': '访问地址不匹配'}, 403)
             return False
         # The same handler serves both a prefix-preserving proxy and a proxy
         # which has already removed the public mount point.
@@ -473,10 +569,21 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if getattr(self, 'command', None) != 'HEAD':
+                self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # The client is gone; do not send another response on this socket.
             self.close_connection = True
+
+    def send_api_error(self, path, exc):
+        if isinstance(exc, DatasetNotFound):
+            return self.send_json({'error': str(exc)}, 404)
+        if isinstance(exc, KeyError) and exc.args in (('id',), ('range',)):
+            return self.send_json({'error': f'缺少必要参数：{exc.args[0]}'}, 400)
+        if isinstance(exc, ValueError) and not isinstance(exc, (json.JSONDecodeError, UnicodeError)):
+            return self.send_json({'error': str(exc)}, 400)
+        self.log_error('%s failed (%s): %s', path, type(exc).__name__, exc)
+        return self.send_json({'error': '数据服务处理失败，请稍后重试'}, 500)
 
     def do_GET(self):
         parts = urlparse(self.path)
@@ -510,50 +617,47 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(original_sheet(path, query.get('sheet', [None])[0],
                                       int(query.get('start', ['1'])[0]), int(query.get('column', ['1'])[0])))
             if parts.path == '/api/search':
-                words = query.get('q', [''])[0].casefold().split()
-                hits = []
-                if words:
-                    for table in catalog():
-                        context = ' '.join([table['file_name'], table['sheet_name'], table['table_name'], *[f['name'] for f in table['fields']]]).casefold()
-                        frame = STORE.load(table['id'])
-                        matched = []
-                        for row in frame.to_dict('records'):
-                            if all(w in context + ' ' + ' '.join(str(v) for v in row.values()).casefold() for w in words):
-                                matched.append(row)
-                                if len(matched) >= 3:
-                                    break
-                        if matched or all(w in context for w in words):
-                            hits.append({'table': table, 'rows': json.loads(pd.DataFrame(matched).to_json(orient='records', date_format='iso'))})
-                return self.send_json({'hits': hits})
+                text = query.get('q', [''])[0].strip()
+                if len(text) > SEARCH_QUERY_LIMIT:
+                    return self.send_json({'error': f'搜索词最多 {SEARCH_QUERY_LIMIT} 个字符'}, 400)
+                if not SEARCH_SLOTS.acquire(blocking=False):
+                    return self.send_json({'error': '同时搜索的请求较多，请稍候重试'}, 429)
+                try:
+                    return self.send_json(search_catalog(text))
+                finally:
+                    SEARCH_SLOTS.release()
             if parts.path == '/api/raw':
-                table = next(t for t in catalog() if t['id'] == query['id'][0])
+                table = find_dataset(query['id'][0])
                 if table['archived']:
                     raise ValueError('原文件不可用，仍可查看已入库数据')
-                book = load_workbook(table['file_path'], read_only=True, data_only=True)
-                try:
-                    sheet = book[table['sheet_name']]
-                    start = max(1, int(query.get('start', ['1'])[0]))
-                    rows = list(sheet.iter_rows(min_row=start, max_row=min(start+79, sheet.max_row), max_col=min(sheet.max_column, 60), values_only=True))
-                    return self.send_json({'rows': rows, 'start': start, 'max_row': sheet.max_row, 'max_col': sheet.max_column})
-                finally:
-                    book.close()
+                start = max(1, int(query.get('start', ['1'])[0]))
+                page = original_sheet(table['file_path'], table['sheet_name'], start, page_columns=60)
+                if page['missing_sheet']:
+                    raise ValueError('原工作表已变更，请同步后重新选择')
+                return self.send_json({'rows': page['rows'] if start <= page['max_row'] else [],
+                                       'start': start, 'max_row': page['max_row'], 'max_col': page['max_col']})
             if parts.path.startswith('/api/'):
                 return self.send_json({'error': '接口不存在'}, 404)
             return super().do_GET()
         except Exception as exc:
-            self.log_error('%s failed (%s): %s', parts.path, type(exc).__name__, exc)
-            self.send_json({'error': str(exc)}, 400)
+            self.send_api_error(parts.path, exc)
         finally:
             elapsed = time.monotonic() - started
             if elapsed >= 2:
                 self.log_message('%s finished in %.2fs', parts.path, elapsed)
 
     def do_POST(self):
-        # Non-simple content types + same origin; listen exclusively on loopback.
+        # Do not derive an allowed origin from an arbitrary proxy Host.
         origin = self.headers.get('Origin')
-        if origin and origin not in ('http://' + self.headers.get('Host', ''), PUBLIC_ORIGIN):
+        host = self.headers.get('Host', '')
+        local_origin = 'http://' + host if is_local_host(host) else None
+        if origin and origin not in (local_origin, PUBLIC_ORIGIN):
             return self.send_json({'error': '来源不匹配'}, 403)
         if urlparse(self.path).path == '/api/import':
+            slots = IMPORT_SLOTS
+            if not slots.acquire(blocking=False):
+                self.close_connection = True
+                return self.send_json({'error': '导入任务较多，请稍后重试'}, 429)
             try:
                 if self.headers.get('Content-Type', '').split(';')[0] != 'application/octet-stream':
                     raise ValueError('需要文件二进制请求')
@@ -572,35 +676,33 @@ class Handler(SimpleHTTPRequestHandler):
             except (TimeoutError, ConnectionError):
                 return self.send_json({'error': '上传中断或超时，请检查连接后重新导入'}, 400)
             except Exception as exc:
-                return self.send_json({'error': str(exc)}, 400)
+                return self.send_api_error('/api/import', exc)
+            finally:
+                slots.release()
         if 'application/json' not in self.headers.get('Content-Type', ''):
             return self.send_json({'error': '需要 JSON 请求'}, 400)
         try:
-            payload = json.loads(self.rfile.read(min(int(self.headers.get('Content-Length', 0)), 65536)) or b'{}')
+            size = int(self.headers.get('Content-Length', 0))
+            if size < 0:
+                raise ValueError('请求长度无效')
+            if size > 65536:
+                return self.send_json({'error': '请求内容不能超过 64 KiB'}, 413)
+            try:
+                payload = json.loads(self.rfile.read(size) or b'{}')
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return self.send_json({'error': '请求内容不是有效的 JSON'}, 400)
+            if not isinstance(payload, dict):
+                raise ValueError('请求内容必须是 JSON 对象')
             if self.path == '/api/sync':
                 request_sync()
                 return self.send_json({'started': True})
             if self.path == '/api/recognition':
-                from excel_parser import discover_tables, OVERRIDES
-                table = next(t for t in catalog() if t['id'] == payload['id'])
-                if table['archived']:
-                    raise ValueError('原文件不可用，无法修正识别区域')
-                from openpyxl.utils.cell import range_boundaries
-                left, top, right, bottom = range_boundaries(payload['range'])
-                if not all([left, top, right, bottom]) or bottom <= top or right < left:
-                    raise ValueError('区域需包含一行表头及至少一行数据，例如 A2:F80')
-                with LOCK:
-                    rules = json.loads(OVERRIDES.read_text(encoding='utf-8')) if OVERRIDES.exists() else {}
-                    key = table['file_path'] + '|' + table['sheet_name'] + '|' + table['range_ref'].split(':')[0]
-                    rules[key] = {'file': table['file_path'], 'sheet': table['sheet_name'], 'range': payload['range'], 'name': payload.get('name') or table['table_name'], 'original': table['range_ref']}
-                    # Validate the entire workbook before persisting the rule.
-                    parsed = discover_tables(table['file_path'], rules=rules)
-                    STORE._replace_file(Path(table['file_path']), parsed, '')
-                    OVERRIDES.write_text(json.dumps(rules, ensure_ascii=False, indent=2), encoding='utf-8')
+                table = find_dataset(payload['id'])
+                save_recognition(table, payload['range'], payload.get('name'))
                 return self.send_json({'saved': True})
             self.send_json({'error': '接口不存在'}, 404)
         except Exception as exc:
-            self.send_json({'error': str(exc)}, 400)
+            self.send_api_error(self.path, exc)
 
 
 DEFAULT_PORT = 9473

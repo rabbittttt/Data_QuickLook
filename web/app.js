@@ -43,15 +43,35 @@ function chart(element,option){if(!element)return;const instance=echarts.init(el
 window.addEventListener('resize',()=>state.charts.forEach(c=>c.resize()));
 if(typeof MutationObserver==='function')new MutationObserver(()=>{if($('#dialog').open&&typeof uiFeedback==='function')uiFeedback($('#dialog'),'dialog');}).observe($('#dialog'),{attributes:true,attributeFilter:['open']});
 $('.brand').onclick=e=>{e.preventDefault();go('home');};
-function header(eyebrow){return `<div class="pagehead"><h1>${esc(eyebrow.split(' / ').at(-1))}</h1></div>`;}
+function header(title){return `<div class="pagehead"><h1>${esc(title)}</h1></div>`;}
 function options(values,selected){
   if(values.includes('有效数值计数')&&!values.includes('非空计数'))values=[...values,'非空计数'];
   const stale=selected!=null&&selected!==''&&!values.includes(selected)?`<option value="${esc(selected)}" selected>[已失效] ${esc(selected)}</option>`:'';
   return stale+values.map(v=>`<option value="${esc(v)}" ${v===selected?'selected':''}>${esc(v)}</option>`).join('');
 }
-function empty(title,subtitle,button=''){return `<div class="panel empty"><h2>${title}</h2><p>${subtitle}</p>${button}</div>`;}
+function empty(title,subtitle,actionHtml=''){return `<div class="panel empty"><h2>${esc(title)}</h2><p>${esc(subtitle)}</p>${actionHtml}</div>`;}
 function grid(rows,columns){return `<div class="tablewrap"><table><thead><tr>${columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${columns.map(c=>`<td class="${typeof row[c]==='number'?'num':''}" title="${esc(fmt(row[c]))}">${esc(fmt(row[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
-function exportCSV(rows,columns,name){const cell=value=>'"'+String(value??'').replace(/"/g,'""').replace(/^([=+@])/,'\t$1')+'"';const text='\ufeff'+[columns,...rows.map(r=>columns.map(c=>r[c]))].map(r=>r.map(cell).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function csvCell(value){
+  let text=String(value??'');
+  if(typeof value==='string'){
+    const leading=text.match(/^[\s\p{Cc}\p{Cf}]*/u)[0];
+    const formulaPrefix=/^[=+@＝＋－＠-]/u.test(text.slice(leading.length));
+    const signedNumber=/^[+-](?:(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$/.test(text.trim());
+    // Quoting protects CSV boundaries, and the tab keeps formula-like text literal in Excel.
+    if(/[\p{Cc}\p{Cf}]/u.test(leading)||(formulaPrefix&&!signedNumber))text='\t'+text;
+  }
+  return '"'+text.replace(/"/g,'""')+'"';
+}
+function exportCSV(rows,columns,name){
+  const records=[columns,...rows.map(row=>columns.map(column=>row[column]))];
+  const text='\ufeff'+records.map(record=>record.map(csvCell).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=name;
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 function persistBasket(){try{localStorage.setItem('shujian-basket',JSON.stringify(state.basket));}catch{}$('#basketCount').textContent=state.basket.length;}
 function catalogStamp(result){return JSON.stringify([result.tables.map(t=>[t.id,t.scanned_at,t.archived]),(result.files||[]).map(f=>[f.id,f.signature]),result.config?.folders||[result.config?.folder].filter(Boolean)]);}
 function catalogStatus(result){
@@ -106,7 +126,7 @@ function go(page,{background=false}={}){
   const moved=state.page!==page;state.page=page;location.hash=page;
   $('#nav').querySelectorAll('button').forEach(b=>{const active=b.dataset.page===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
   const rendering=render(),token=renderToken;
-  return rendering.then(()=>{if(!background&&moved&&token===renderToken&&!$('#dialog')?.open){const main=$('#main');main.setAttribute('tabindex','-1');main.focus({preventScroll:true});}}).catch(e=>{if(token!==renderToken)return;console.error('页面加载失败',e);toast(e.message);$('#main').innerHTML=empty('页面暂时无法加载',esc(e.message),'<button onclick="location.reload()">重新加载</button>');});
+  return rendering.then(()=>{if(!background&&moved&&token===renderToken&&!$('#dialog')?.open){const main=$('#main');main.setAttribute('tabindex','-1');main.focus({preventScroll:true});}}).catch(e=>{if(token!==renderToken)return;console.error('页面加载失败',e);toast(e.message);$('#main').innerHTML=empty('页面暂时无法加载',e.message,'<button onclick="location.reload()">重新加载</button>');});
 }
 function syncComparisonTableVisibility(){if(state.chartType==='table'){const details=$('.numeric-details');if(details)details.open=true;}}
 async function render(){const token=++renderToken;dispose();const main=$('#main');if(state.page==='home')await home(token);else if(state.page==='explore')await dataPage(token);else if(state.page==='compare')await chartStudio(token);else if(state.page==='saved')saved();else if(state.page==='search')await search(token);else await home(token);if(token===renderToken){syncComparisonTableVisibility();if(typeof renderCatalogUpdateNotice==='function')renderCatalogUpdateNotice();}}
@@ -198,7 +218,7 @@ async function addSeries(id,metric){const t=tableById(id);if(!t)throw Error('数
 function picker(){const fields=state.tables.flatMap(t=>t.fields.map(f=>({t,f})));$('#dialogBody').innerHTML=`<div class="eyebrow">FIELD LIBRARY / 全部参数</div><h2>选择要对比的参数</h2><p class="meta">所有文件与数据表的全部字段。选择后可以分别设置筛选与对齐维度。</p><div class="toolbar"><input id="fieldSearch" type="search" placeholder="搜索参数、文件、工作表…" autofocus></div><div id="fieldResults"></div>`;const show=()=>{const words=$('#fieldSearch').value.toLowerCase().split(/\s+/).filter(Boolean);const found=fields.filter(({t,f})=>words.every(w=>(t.relative_path+' '+t.sheet_name+' '+t.table_name+' '+f.name).toLowerCase().includes(w)));$('#fieldResults').innerHTML=`<p class="meta">匹配 ${found.length} 个字段，显示前 80 个；输入关键词缩小范围。</p><div class="tablewrap"><table><thead><tr><th>参数</th><th>来源</th><th></th></tr></thead><tbody>${found.slice(0,80).map(({t,f})=>`<tr><td><b>${esc(f.name)}</b><span class="rowmeta">${f.type==='number'?'数值':f.type==='date'?'时间':'文本 / 可计数'}</span></td><td>${esc(t.table_name)}<span class="rowmeta">${esc(t.file_name)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</span></td><td><button data-add="${t.id}" data-metric="${esc(f.name)}">加入 ＋</button></td></tr>`).join('')}</tbody></table></div>`;bindTableActions();};$('#fieldSearch').oninput=show;show();$('#dialog').showModal();$('#fieldSearch').focus();$('#dialog').addEventListener('close',()=>{if(state.page==='compare')go('compare');},{once:true});}
 async function compare(token){
   if(state.chartType==='horizontal'){state.chartType='bar';state.axisSwapped=true;}
-  $('#main').innerHTML=header('COMPARE / 对比分析','把关键差异，放在同一张图里','各系列独立聚合；时间粒度不同自动分面，缺失项保留为空。')+`<div class="split"><section><div id="seriesList"></div></section><section><div class="panel"><div class="charttools"><label>图表 <select id="chartType">${options(['auto','bar','line','facet','table'],state.chartType)}</select></label><label>显示 <select id="chartLimit">${options(['10','20','50','100','全部'],String(state.limit))}</select></label><button id="saveView">☆ 保存分析</button><button id="png">导出图表</button></div><p id="recommendNote" class="meta" role="status"></p><div id="facetControls" class="charttools" aria-label="分面图分页" style="display:none"></div><div id="compareChart" class="compare-chart"></div></div><div class="panel"><div class="sectionhead" style="margin-top:0"><h2>数值对比</h2><button id="exportCompare">导出 CSV</button></div><label class="meta"><input id="baseline" type="checkbox" ${state.baseline?'checked':''}> 口径与单位相同，计算相对第一组的差值和变化率</label><div id="compareGrid" style="margin-top:16px"></div><p class="meta">基准为 0 或缺失时，变化率留空。不同时间粒度不计算组间差值。</p></div></section></div>`;
+  $('#main').innerHTML=header('对比分析')+`<div class="split"><section><div id="seriesList"></div></section><section><div class="panel"><div class="charttools"><label>图表 <select id="chartType">${options(['auto','bar','line','facet','table'],state.chartType)}</select></label><label>显示 <select id="chartLimit">${options(['10','20','50','100','全部'],String(state.limit))}</select></label><button id="saveView">☆ 保存分析</button><button id="png">导出图表</button></div><p id="recommendNote" class="meta" role="status"></p><div id="facetControls" class="charttools" aria-label="分面图分页" style="display:none"></div><div id="compareChart" class="compare-chart"></div></div><div class="panel"><div class="sectionhead" style="margin-top:0"><h2>数值对比</h2><button id="exportCompare">导出 CSV</button></div><label class="meta"><input id="baseline" type="checkbox" ${state.baseline?'checked':''}> 口径与单位相同，计算相对第一组的差值和变化率</label><div id="compareGrid" style="margin-top:16px"></div><p class="meta">基准为 0 或缺失时，变化率留空。不同时间粒度不计算组间差值。</p></div></section></div>`;
   const chartNames={auto:'推荐默认',bar:'分组柱状',line:'趋势折线',facet:'独立分面',table:'仅表格'};
   Array.from($('#chartType').options).forEach(o=>o.textContent=chartNames[o.value]);
   await Promise.all((state.chartPreview||state.basket).map(s=>tableData(s.id).catch(()=>null)));if(token!==renderToken)return;
@@ -297,7 +317,7 @@ function drawComparison(){
 function views(){try{return JSON.parse(localStorage.getItem('shujian-views')||'[]');}catch{return[];}}
 function saveView(){$('#dialogBody').innerHTML='<div class="eyebrow">SAVE ANALYSIS</div><h2>保存这组对比</h2><div class="formgrid"><label>分析名称<input id="viewName" placeholder="例如：M8 与 M9 锁单对比"></label><button class="primary" id="confirmSave">保存</button></div>';$('#dialog').showModal();$('#confirmSave').onclick=()=>{const name=$('#viewName').value.trim();if(!name)return toast('请输入分析名称');const all=views();all.push({name,basket:structuredClone(state.basket),type:state.chartType,axisSwapped:state.axisSwapped,limit:state.limit,baseline:state.baseline,date:new Date().toLocaleDateString('zh-CN')});try{localStorage.setItem('shujian-views',JSON.stringify(all));$('#dialog').close();toast('已保存。同步数据后再次打开会使用最新数据。');}catch{toast('浏览器存储不可用，请导出分析数据');}};}
 function saved(){
-  const all=views();$('#main').innerHTML=header('COLLECTION / 收藏的分析','把常看的对比，留在手边','保存的是分析设置；打开时读取最新导入数据。')+(all.length?`<div class="cards">${all.map((v,i)=>`<article class="card saved-card"><span class="tag">${v.basket.length} 个系列</span><h3 style="margin-top:14px">${esc(v.name)}</h3><p>${esc(v.date)} · ${esc(v.basket.map(s=>s.businessMetric||s.metric).join(' / '))}</p><button class="primary" data-openview="${i}">打开分析 →</button> <button data-deleteview="${i}">移除收藏</button></article>`).join('')}</div>`:empty('还没有收藏的分析','在对比分析中选择「保存分析」，下次即可直接打开。'));
+  const all=views();$('#main').innerHTML=header('收藏的分析')+(all.length?`<div class="cards">${all.map((v,i)=>`<article class="card saved-card"><span class="tag">${v.basket.length} 个系列</span><h3 style="margin-top:14px">${esc(v.name)}</h3><p>${esc(v.date)} · ${esc(v.basket.map(s=>s.businessMetric||s.metric).join(' / '))}</p><button class="primary" data-openview="${i}">打开分析 →</button> <button data-deleteview="${i}">移除收藏</button></article>`).join('')}</div>`:empty('还没有收藏的分析','在对比分析中选择「保存分析」，下次即可直接打开。'));
   document.querySelectorAll('[data-openview]').forEach(b=>b.onclick=()=>{
     const v=all[Number(b.dataset.openview)];state.basket=normalizeSeriesIds(structuredClone(v.basket));state.chartType=v.type||'auto';state.axisSwapped=!!v.axisSwapped;state.limit=v.limit??'全部';state.baseline=!!v.baseline;state.chartPreview=null;state.chartUndo=null;state.openBuilder=false;state.builderOpen=false;state.seriesManagerOpen=false;
     const first=state.basket[0];
@@ -308,7 +328,37 @@ function saved(){
   });
   document.querySelectorAll('[data-deleteview]').forEach(b=>b.onclick=()=>{all.splice(Number(b.dataset.deleteview),1);localStorage.setItem('shujian-views',JSON.stringify(all));saved();});
 }
-async function search(token){$('#main').innerHTML=header('SEARCH / 全局搜索','搜索「'+state.query+'」','同时查找文件、表名、字段以及单元格内容。')+'<div class="loading">正在搜索全部已导入数据…</div>';const result=await api('search?q='+encodeURIComponent(state.query));if(token!==renderToken)return;const resultSummary=`找到 ${result.hits.length} 个相关数据区域${result.hits.length>60?'，当前显示前 60 个；请缩小关键词查看其他结果。':'。'}每表展示最多 3 条示例。`;$('#main').innerHTML=header('SEARCH / 全局搜索','搜索「'+state.query+'」',resultSummary)+`<p class="search-summary" role="status">${resultSummary}</p><div class="results">${result.hits.slice(0,60).map(({table:t,rows})=>`<article class="panel"><div class="sectionhead" style="margin:0 0 12px"><div><h3>${esc(t.table_name)}</h3><p>${esc(t.relative_path)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</p></div><button data-view="${t.id}">浏览数据 →</button></div><p class="meta">${t.fields.filter(f=>state.query.split(/\s+/).some(w=>f.name.includes(w))).slice(0,8).map(f=>`<button class="fieldchip" data-add="${t.id}" data-metric="${esc(f.name)}">${esc(f.name)} ＋</button>`).join('')}</p>${rows.map(row=>`<div class="resultrow"><span class="tag">行 ${esc(row._source_row)}</span> ${Object.entries(row).filter(([k])=>!k.startsWith('_')).slice(0,8).map(([k,v])=>`${esc(k)} <b>${esc(fmt(v))}</b>`).join(' · ')}</div>`).join('')}</article>`).join('')}</div>`+(result.hits.length?'':empty('没有找到匹配数据',''));bindTableActions();}
+async function search(token){
+  const query=state.query;
+  $('#main').innerHTML=header('全局搜索')+'<div class="loading">正在搜索已导入数据…</div>';
+  const result=await api('search?q='+encodeURIComponent(query));
+  if(token!==renderToken)return;
+
+  const hits=result.hits.slice(0,60);
+  const summary=[`找到 ${result.found_count??result.hits.length} 个相关数据区域。`];
+  if(result.results_truncated||result.hits.length>hits.length){
+    summary.push(`当前显示前 ${hits.length} 个。`);
+  }
+  if(result.content_truncated)summary.push('已达到单元格检索上限，可能还有匹配项。');
+  if(hits.length)summary.push('每表展示最多 3 条示例。');
+
+  const terms=query.toLowerCase().split(/\s+/).filter(Boolean);
+  const cards=hits.map(({table,rows})=>{
+    const id=esc(table.id);
+    const fields=table.fields.filter(field=>terms.some(term=>field.name.toLowerCase().includes(term))).slice(0,8);
+    const chips=fields.map(field=>`<button class="fieldchip" data-add="${id}" data-metric="${esc(field.name)}">${esc(field.name)} ＋</button>`).join('');
+    const examples=rows.map(row=>{
+      const values=Object.entries(row).filter(([key])=>!key.startsWith('_')).slice(0,8)
+        .map(([key,value])=>`${esc(key)} <b>${esc(fmt(value))}</b>`).join(' · ');
+      return `<div class="resultrow"><span class="tag">行 ${esc(row._source_row)}</span> ${values}</div>`;
+    }).join('');
+    return `<article class="panel"><div class="sectionhead" style="margin:0 0 12px"><div><h3>${esc(table.table_name)}</h3><p>${esc(table.relative_path)} / ${esc(table.sheet_name)} / ${esc(table.range_ref)}</p></div><button data-view="${id}">浏览数据 →</button></div><p class="meta">${chips}</p>${examples}</article>`;
+  }).join('');
+  const noResults=result.content_truncated?'已检索范围内没有匹配数据':'没有找到匹配数据';
+  $('#main').innerHTML=header('全局搜索')+`<p class="search-summary" role="status">${esc(summary.join(''))}</p>`+
+    (hits.length?`<div class="results">${cards}</div>`:empty(noResults,''));
+  bindTableActions();
+}
 $('#allData').onclick=()=>go('explore');
 $('#startCompare').onclick=()=>{
   const builder=state.page==='compare'?$('#studioBuilderShell'):null;
@@ -321,7 +371,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
   async function loadCatalog(){
     try{await refreshCatalog();}catch(error){
       $('#syncStatus').textContent='数据服务未连接';
-      $('#main').innerHTML=empty('数据服务未连接',esc(error.message),'<button id="retryCatalog">重新连接</button>');
+      $('#main').innerHTML=empty('数据服务未连接',error.message,'<button id="retryCatalog">重新连接</button>');
       $('#retryCatalog').onclick=async event=>{
         event.currentTarget.disabled=true;
         $('#syncStatus').textContent='正在连接数据仓库';

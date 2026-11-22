@@ -19,7 +19,7 @@
 
 换电脑后应重新创建 `Project/.venv`，不要直接复制旧电脑的虚拟环境。整体移动 `Project` 时保留项目与共享目录的相对位置；`Project` 的上级目录和盘符可以不同。
 
-`启动数据速查.cmd` 从脚本所在目录向上找到最近名为 `Project` 的目录，固定使用其中 `.venv\Scripts\python.exe`，忽略子项目自己的 `.venv`，也不回退 PATH 或 Codex Python。可用 `DATA_QUICKLOOK_PYTHON` 显式指定其他解释器文件；相对路径按本项目目录解析。启动窗口显示所选 Python，并在环境缺失或依赖不全时停止，提示初始化或安装命令。
+`启动数据速查.cmd` 从脚本所在目录向上找到最近名为 `Project` 的目录，固定使用其中 `.venv\Scripts\python.exe`，忽略子项目自己的 `.venv`，也不回退 PATH 或 Codex Python。可用 `DATA_QUICKLOOK_PYTHON` 显式指定其他解释器文件；相对路径按本项目目录解析。启动脚本检查 Python 3.11 或更新版本，以及主服务依赖 `pandas` 和 `openpyxl`。完整的 `requirements.txt` 也包含旧版 Streamlit 入口 `app.py` 的依赖。
 
 也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:9473)；命令行使用 `..\.venv\Scripts\python.exe server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:9473`。
 
@@ -61,7 +61,7 @@ $env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
 - `DATA_QUICKLOOK_DATA_DIR` 指定持久目录，内含 `warehouse.db`、`recognition.json` 和上传原件 `uploads/`。版本切换时让旧实例退出，再用同一持久目录启动新实例。
 - `SHARED_DATA_ROOT` 指向包含「订单汇总」「原始销量」等子目录的共享根。默认使用项目同级的 `工作台数据/shared`，单独指定 `DATA_QUICKLOOK_DATA_DIR` 时也按此默认位置解析共享根。
 - 门户固定入口为 `/quicklook/`，整个子树代理到本机服务 `127.0.0.1:9473`。代理保留或剥离前缀均可，须保留查询参数、请求方法、上传正文和内容长度。导入上限为 256 MiB。CSV 和图表图片由浏览器根据已加载的数据生成。
-- 将 `DATA_QUICKLOOK_PUBLIC_ORIGIN` 替换为实际门户的协议、域名及非默认端口。HTTPS 终止或后端 Host 被改写时需要该值，来源校验仍按精确匹配执行。健康检查使用后端 `GET /healthz` 或门户 `GET /quicklook/healthz`，返回 `{"ok":true,"app":"quicklook"}`。
+- 将 `DATA_QUICKLOOK_PUBLIC_ORIGIN` 设为实际门户的协议、域名及非默认端口。后端仅接受回环 Host 或该配置指定的 Host，写入请求的 Origin 须与门户来源或本地 HTTP 来源匹配。健康检查使用后端 `GET /healthz` 或门户 `GET /quicklook/healthz`，返回 `{"ok":true,"app":"quicklook"}`。
 - 门户侧只需确认固定入口、通用前缀代理、上传限制和健康探针。后续升级时切换服务指向新版 `payload/server.py`，沿用原持久目录、监听端口和公共前缀，然后重启数据速查。新增前缀内接口不需要另加代理规则。
 
 ## 查看原始数据

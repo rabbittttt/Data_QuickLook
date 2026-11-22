@@ -21,7 +21,7 @@ assert.equal(chartPalette.length,6,'the established six-color chart identity rem
 chartPalette.forEach(color=>assert.ok(contrast(color)>=3,`chart stroke ${color} meets non-text contrast on white`));
 assert.match(css,/button:focus-visible,a:focus-visible,summary:focus-visible,input:focus,select:focus/);
 assert.match(css,/\.studio-builder>summary:focus-visible[^}]*outline:3px solid var\(--focus\)/);
-assert.match(app,/function header\(eyebrow\)\{return `<div class="pagehead"><h1>/,'page title is a visible heading');
+assert.match(app,/function header\(title\)\{return `<div class="pagehead"><h1>/,'page title is a visible heading');
 assert.match(css,/\.series-toolbar\{[^}]*flex-wrap:wrap/,'new-series action has a wrapping toolbar outside the manager');
 assert.match(css,/\.applied-series-manager \.series-ribbon\{[^}]*overflow-y:auto/,'applied series have an explicit local scroll region');
 assert.match(css,/\.series-ribbon \.series-remove\{position:static/,'delete action no longer overlays the edit target');

@@ -16,8 +16,10 @@ from zipfile import ZipFile
 
 from openpyxl import Workbook
 
+import excel_parser
 import server
-from warehouse import ScanResult, Warehouse
+import warehouse
+from warehouse import ScanResult, Warehouse, file_signature
 
 
 def workbook_bytes(value=100):
@@ -51,10 +53,11 @@ class QuietHandler(server.Handler):
 class FileImportHTTPTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.folder = self.root / 'uploads'
         self.folder.mkdir()
         self.store = Warehouse(self.root / 'test.db')
+        self.store.enable_concurrent_reads()
         self.status = {'busy': False, 'errors': [], 'last_sync': None}
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(server, 'STORE', self.store))
@@ -62,6 +65,7 @@ class FileImportHTTPTests(unittest.TestCase):
         self.stack.enter_context(patch.object(server, 'STATUS', self.status))
         self.stack.enter_context(patch.object(server, 'LOCK', threading.RLock()))
         self.stack.enter_context(patch.object(server, 'SYNC_LOCK', threading.Lock()))
+        self.stack.enter_context(patch.object(server, 'SHARED_PENDING', {}))
         self.stack.enter_context(patch.object(server, 'config', return_value={
             'folder': str(self.folder), 'auto': False,
         }))
@@ -139,6 +143,84 @@ class FileImportHTTPTests(unittest.TestCase):
         self.assertEqual(data['rows'][0]['销量'], 100)
         self.assertEqual((self.folder / '销量.xlsx').read_bytes(), self.content,
                          'importing and parsing must not rewrite source bytes')
+
+    def test_missing_upload_is_unregistered_without_losing_imported_data(self):
+        path = self.folder / '销量.xlsx'
+        path.write_bytes(self.content)
+        self.store.register_upload(path)
+        initial = self.store.sync_files(self.store.uploaded_files(), publish_lock=server.LOCK)
+        self.assertEqual(initial.errors, [])
+        dataset_id = self.store.catalog().iloc[0]['id']
+        self.assertEqual(self.store.uploaded_files(), [path])
+        path.unlink()
+
+        result = self.store.sync_files(self.store.uploaded_files(), publish_lock=server.LOCK)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(self.store.uploaded_files(), [])
+        code, data = self.request('table', id=dataset_id)
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data['rows'][0]['销量'], 100)
+
+    def test_background_parse_releases_publish_lock_and_discards_changed_source(self):
+        path = self.folder / '销量.xlsx'
+        path.write_bytes(self.content)
+        lock = threading.Lock()
+        self.assertEqual(self.store.sync_files([path], publish_lock=lock).errors, [])
+        dataset_id = self.store.catalog().iloc[0]['id']
+        original_signature = self.store.file_versions()[str(path)]
+        discover_tables = warehouse.discover_tables
+
+        def parse_and_replace(source, **kwargs):
+            self.assertFalse(lock.locked())
+            tables = discover_tables(source, **kwargs)
+            source.write_bytes(workbook_bytes(300000))
+            return tables
+
+        with patch.object(warehouse, 'discover_tables', side_effect=parse_and_replace):
+            result = self.store.sync_files([path], force=True, publish_lock=lock)
+        self.assertEqual(len(result.errors), 1)
+        self.assertIn('下次刷新重试', result.errors[0])
+        self.assertEqual(self.store.load(dataset_id).iloc[0]['销量'], 100)
+        self.assertEqual(self.store.file_versions()[str(path)], original_signature)
+
+    def test_other_upload_requests_are_rejected_when_slots_are_full(self):
+        slots = threading.BoundedSemaphore(1)
+        with patch.object(server, 'IMPORT_SLOTS', slots):
+            slots.acquire()
+            try:
+                code, result = self.upload()
+                self.assertEqual(code, 429, result)
+                self.assertEqual(list(self.folder.iterdir()), [])
+            finally:
+                slots.release()
+
+            code, result = self.upload()
+            self.assertEqual(code, 201, result)
+
+    def test_recognition_persists_real_signature_and_rolls_back_failed_rule_publish(self):
+        path = self.folder / '销量.xlsx'
+        path.write_bytes(self.content)
+        self.assertEqual(self.store.sync_files([path], publish_lock=server.LOCK).errors, [])
+        rules_path = self.root / 'recognition.json'
+        table = server.catalog()[0]
+
+        with patch.object(excel_parser, 'OVERRIDES', rules_path):
+            with self.assertRaises(ValueError):
+                server.save_recognition(table, 'A1:B3', 123)
+            self.assertFalse(rules_path.exists())
+            server.save_recognition(table, 'A1:B3', '月度销量')
+            self.assertEqual(self.store.file_versions()[str(path)], file_signature(path))
+            updated_table = server.catalog()[0]
+            previous_rules = rules_path.read_bytes()
+            self.assertEqual(updated_table['table_name'], '月度销量')
+
+            with patch.object(server.os, 'replace', side_effect=PermissionError('read-only location')):
+                with self.assertRaises(PermissionError):
+                    server.save_recognition(updated_table, 'A1:B3', '未提交的名称')
+
+            self.assertEqual(rules_path.read_bytes(), previous_rules)
+            self.assertEqual(server.catalog()[0], updated_table)
+            self.assertEqual(self.store.file_versions()[str(path)], file_signature(path))
 
     def test_same_name_requires_confirmation_and_never_creates_numbered_copies(self):
         original = self.folder / '销量.xlsx'
@@ -357,7 +439,7 @@ class FileImportHTTPTests(unittest.TestCase):
         release = [threading.Event(), threading.Event()]
         calls = []
 
-        def controlled_sync(folder):
+        def controlled_sync(folder, **kwargs):
             index = len(calls)
             calls.append(folder)
             if index >= 2:

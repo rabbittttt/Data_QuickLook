@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -37,14 +38,13 @@ class PortalPrefixTests(unittest.TestCase):
         setting.start()
         self.addCleanup(setting.stop)
 
-    def request(self, path, *, origin=None, host='backend.example', method='GET', headers=None):
+    def request(self, path, *, origin=None, host='127.0.0.1:4173', method='GET', headers=None, body=None):
         request_headers = {'Host': host, **(headers or {})}
-        body = None
         if origin is not None:
             request_headers['Origin'] = origin
         if method == 'POST':
             request_headers['Content-Type'] = 'application/json'
-            body = '{}'
+            body = '{}' if body is None else body
         connection = HTTPConnection('127.0.0.1', self.port, timeout=5)
         try:
             connection.request(method, path, body=body, headers=request_headers)
@@ -78,8 +78,35 @@ class PortalPrefixTests(unittest.TestCase):
         self.patch_value('request_sync', lambda: None)
         for mount in ('', '/quicklook'):
             endpoint = mount + '/api/sync'
-            self.assertEqual(self.request(endpoint, method='POST', origin='http://backend.example')[0], 200)
+            self.assertEqual(self.request(endpoint, method='POST', origin='http://127.0.0.1:4173')[0], 200)
             self.assertEqual(self.request(endpoint, method='POST', origin='https://planhub.example')[0], 200)
             self.assertEqual(self.request(endpoint, method='POST', origin='https://other.example',
                                           headers={'X-Forwarded-Host': 'other.example',
                                                    'X-Forwarded-Proto': 'https'})[0], 403)
+
+    def test_host_allows_configured_portal_and_loopback(self):
+        self.patch_value('request_sync', lambda: None)
+        for host in ('planhub.example', 'localhost:9473', '[::1]:9473'):
+            self.assertEqual(self.request('/quicklook/', host=host, method='HEAD')[0], 200)
+        self.assertEqual(self.request('/quicklook/api/sync', host='planhub.example', method='POST',
+                                      origin='https://planhub.example')[0], 200)
+        self.assertEqual(self.request('/quicklook/api/sync', host='planhub.example', method='POST',
+                                      origin='http://planhub.example')[0], 403)
+        self.assertEqual(self.request('/quicklook/', host='other.example')[0], 403)
+        self.assertEqual(self.request('/quicklook/api/sync', host='other.example', method='POST',
+                                      origin='http://other.example')[0], 403)
+
+    def test_api_errors_keep_internal_details_in_logs(self):
+        def fail(_):
+            raise sqlite3.OperationalError('private database location')
+
+        self.patch_value('data', fail)
+        status, _, body = self.request('/quicklook/api/table?id=sales')
+        self.assertEqual(status, 500)
+        self.assertNotIn(b'private database location', body)
+        self.assertEqual(self.request('/quicklook/api/table')[0], 400)
+        self.assertEqual(self.request('/quicklook/api/sync', method='POST', body='[]')[0], 400)
+        self.assertEqual(self.request('/quicklook/api/sync', method='POST', body='{broken')[0], 400)
+        self.assertEqual(self.request('/quicklook/api/sync', method='POST', body=' ' * 65537)[0], 413)
+        self.patch_value('catalog', lambda: [])
+        self.assertEqual(self.request('/quicklook/api/raw?id=old')[0], 404)

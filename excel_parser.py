@@ -31,6 +31,13 @@ PARSER_VERSION = parser_revision()
 OVERRIDES = data_dir(Path(__file__).resolve().parent) / 'recognition.json'
 
 
+def recognition_rules_snapshot() -> bytes | None:
+    try:
+        return OVERRIDES.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
 @dataclass
 class ParsedTable:
     file_path: Path
@@ -199,7 +206,9 @@ def _discover_worksheet(file_path, worksheet):
 
 def discover_tables(path: str | Path, rules=None, notices=None) -> list[ParsedTable]:
     file_path = Path(path).resolve()
-    rules = rules if rules is not None else (json.loads(OVERRIDES.read_text(encoding='utf-8')) if OVERRIDES.exists() else {})
+    if rules is None:
+        snapshot = recognition_rules_snapshot()
+        rules = json.loads(snapshot) if snapshot is not None else {}
     relevant = [rule for rule in rules.values() if Path(rule['file']).resolve() == file_path]
     workbook = load_workbook(file_path, data_only=True, read_only=False)
     try:
