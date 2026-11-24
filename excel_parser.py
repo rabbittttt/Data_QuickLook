@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import hashlib
+from importlib.metadata import version
 import json
 from typing import Any, Iterable
 from datetime import date, datetime
@@ -16,13 +17,16 @@ from runtime_paths import data_dir
 
 
 SUPPORTED_SUFFIXES = {".xlsx", ".xlsm"}
+# Bump when Warehouse changes the meaning or layout of persisted rows.
+STORAGE_FORMAT_VERSION = 1
+
+
 def parser_revision(root=None):
-    """Stable across relocation; changes with parsing/storage code and dependencies."""
     root = Path(root or Path(__file__).resolve().parent)
-    digest = hashlib.sha256()
-    for name in ('excel_parser.py', 'warehouse.py', 'runtime_paths.py', 'requirements.txt'):
-        digest.update(name.encode('utf-8') + b'\0')
-        digest.update(hashlib.sha256((root / name).read_bytes()).digest())
+    digest = hashlib.sha256(f'quicklook-storage:{STORAGE_FORMAT_VERSION}'.encode())
+    for package in ('openpyxl', 'pandas'):
+        digest.update(f'|{package}={version(package)}'.encode())
+    digest.update((root / 'excel_parser.py').read_bytes().replace(b'\r\n', b'\n'))
     return digest.hexdigest()
 
 

@@ -76,11 +76,6 @@ function chartOperation(field,table){
   if(isRatioField(field.name)||/排名|价格|单价|平均|天数|时长|周期/.test(field.name))return '平均值';
   return '求和';
 }
-function wideSeriesField(table,periods=periodColumns(table)){
-  const candidates=(table?.fields||[]).filter(f=>!periods.includes(f.name)&&f.type!=='number'&&!isTotalLabel(f.name));
-  const score=name=>/^(指标|项目|统计项|车型|车系|版本|区域|门店|配置)$/.test(name)?10:/名称|类别|类型/.test(name)?5:1;
-  return candidates.sort((a,b)=>score(b.name)-score(a.name))[0]?.name||'';
-}
 function rowLabelFields(table,periods=periodColumns(table)){
   const first=table.fields.findIndex(f=>periods.includes(f.name));
   return table.fields.filter((f,i)=>!periods.includes(f.name)&&!isPeriodColumn(f.name)&&!isTotalLabel(f.name)&&(i<first||f.type==='text')).map(f=>f.name);
@@ -169,26 +164,6 @@ function chartDefaults(table){
   const metric=numeric.find(f=>/净大定|销量|订单量|交付|销售额/.test(f.name))||numeric[0]||fields[0];
   const dimension=fields.find(f=>isTimeField(f.name)&&f.name!==metric?.name)||fields.find(f=>f.type!=='number'&&f.name!==metric?.name)||fields.find(f=>f.name!==metric?.name)||fields[0];
   return {metric:metric?.name||'',dimension:dimension?.name||'',operation:chartOperation(metric,table),vehicleField:fields.find(f=>/^(车型|车系|车辆型号|产品型号)$/.test(f.name))?.name||'',vehicleValue:''};
-}
-function tableRecommendations(table,currentMetric='',currentDimension='',limit=3){
-  if(!table?.fields?.length)return [];
-  const fields=table.fields,defaults=chartDefaults(table);
-  const periods=periodColumns(table);
-  if(periods.length>=2){
-    const dimension=wideSeriesField(table,periods)||fields.find(f=>!periods.includes(f.name))?.name||defaults.dimension;
-    const metric=periods[0];
-    return [{metric,dimension,operation:wideOperation(table,dimension,''),vehicleField:dimension,vehicleValue:'',businessMetric:wideBusinessMetric(table,dimension,''),wide:true,periods}];
-  }
-  const score=name=>/销量|净大定|订单量|交付|销售额/.test(name)?8:/转化率|占比|比例|选装率/.test(name)?7:/库存|金额|价格|排名/.test(name)?5:1;
-  const metrics=fields.filter(f=>f.type==='number'&&!/编码|序号|日期|年份|小时/.test(f.name)).sort((a,b)=>score(b.name)-score(a.name));
-  if(!metrics.length)metrics.push(...fields.filter(f=>f.type!=='number'));
-  const dimensions=fields.filter(f=>f.name!==currentMetric).sort((a,b)=>Number(isTimeField(b.name))-Number(isTimeField(a.name))||Number(b.type!=='number')-Number(a.type!=='number'));
-  const metricNames=[currentMetric,...metrics.map(f=>f.name)].filter((name,i,a)=>name&&fields.some(f=>f.name===name)&&a.indexOf(name)===i);
-  const dimensionNames=[currentDimension,defaults.dimension,...dimensions.map(f=>f.name)].filter((name,i,a)=>name&&fields.some(f=>f.name===name)&&a.indexOf(name)===i);
-  const pairs=[];
-  for(const metric of metricNames){const dimension=dimensionNames.find(name=>name!==metric);if(dimension)pairs.push([metric,dimension]);}
-  for(const dimension of dimensionNames){const metric=metricNames[0];if(metric&&dimension!==metric)pairs.push([metric,dimension]);}
-  return pairs.filter(([metric,dimension],i,a)=>a.findIndex(x=>x[0]===metric&&x[1]===dimension)===i).slice(0,limit).map(([metric,dimension])=>({metric,dimension,operation:chartOperation(fields.find(f=>f.name===metric),table),vehicleField:defaults.vehicleField,vehicleValue:''}));
 }
 function seriesWarning(series){
   const notes=[];

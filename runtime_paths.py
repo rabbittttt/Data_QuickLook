@@ -29,10 +29,14 @@ def source_base(root):
     return _configured_path(root, SOURCE_BASE_ENV) or (data_dir(root).parent if _configured_path(root, DATA_DIR_ENV) else Path(root).resolve())
 
 
+def planhub_data_root(root):
+    root = Path(root).resolve()
+    return _configured_path(root, 'PLANHUB_DATA_ROOT') or root.parent / "工作台数据"
+
+
 def persistent_directory(root):
     root = Path(root).resolve()
-    value = os.environ.get("PLANHUB_DATA_ROOT", "").strip()
-    base = (root / value).resolve() if value else root.parent / "工作台数据"
+    base = planhub_data_root(root)
     destination = base / "database" / "quicklook"
     if not destination.exists() and (root / "output_file" / "warehouse.db").exists():
         raise RuntimeError("旧持久数据尚未迁移，请先停止服务并运行门户的数据迁移工具；不会创建空库。")

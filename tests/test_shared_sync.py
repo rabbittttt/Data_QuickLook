@@ -67,7 +67,7 @@ class SharedSyncTests(unittest.TestCase):
         self.assertEqual(parser_revision(moved),original)
         for name in names:
             (moved/name).write_text('v2')
-            self.assertNotEqual(parser_revision(moved),original)
+            self.assertEqual(parser_revision(moved) != original, name == 'excel_parser.py')
             (moved/name).write_text('v1')
 
     def test_five_minute_scan_and_one_minute_confirmation_are_separate(self):

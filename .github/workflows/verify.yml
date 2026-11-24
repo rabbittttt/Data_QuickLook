@@ -1,0 +1,55 @@
+name: QuickLook verification
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test dependencies
+        working-directory: candidate
+        run: |
+          python -m pip install -r requirements-legacy.txt playwright Pillow
+          python -m playwright install chromium
+      - name: Unit and interface tests
+        working-directory: candidate
+        run: |
+          $env:DATA_QUICKLOOK_DATA_DIR = Join-Path $env:RUNNER_TEMP 'unittest-state'
+          python -B -m unittest discover -s tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($suite in Get-ChildItem tests/test_*.cjs) {
+            node $suite.FullName
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request' || github.event.before != '0000000000000000000000000000000000000000'
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+          path: previous
+          persist-credentials: false
+      - name: Compare releases through the portal prefix
+        run: |
+          $arguments = @()
+          if (Test-Path previous/scripts/build_release.py) {
+            python -B candidate/scripts/verify_portal.py --project previous --output evidence/baseline --capture-only
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $arguments = @('--baseline', 'evidence/baseline')
+          }
+          python -B candidate/scripts/verify_portal.py --output evidence/current @arguments
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quicklook-verification
+          path: evidence

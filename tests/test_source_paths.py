@@ -60,8 +60,8 @@ class SourcePathTests(unittest.TestCase):
         central = self.parent / '自定义工作台数据'
         shared = central / 'shared'
         shared.mkdir(parents=True)
-        for value in (str(central), '../自定义工作台数据'):
-            with self.subTest(value=value), patch.dict(os.environ, {'PLANHUB_DATA_ROOT': value}):
+        for value in (str(central), '../自定义工作台数据', '~/自定义工作台数据'):
+            with self.subTest(value=value), patch.dict(os.environ, {'PLANHUB_DATA_ROOT': value, 'HOME': str(self.parent), 'USERPROFILE': str(self.parent)}):
                 self.assertEqual(shared_data_root(self.root), shared)
                 self.assertEqual(data_dir(self.root), central / 'database' / 'quicklook')
 

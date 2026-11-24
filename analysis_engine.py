@@ -6,12 +6,19 @@ from typing import Any
 import pandas as pd
 
 
+def numbers(series):
+    text = series.astype('string').str.strip().str.replace(',', '', regex=False).str.replace('，', '', regex=False)
+    percent = text.str.endswith('%', na=False)
+    result = pd.to_numeric(text.str.removesuffix('%'), errors='coerce').astype('Float64')
+    return result.where(~percent, result / 100)
+
+
 def numeric_candidates(frame: pd.DataFrame) -> list[str]:
     candidates: list[str] = []
     for column in frame.columns:
         if column.startswith("_"):
             continue
-        converted = pd.to_numeric(frame[column], errors="coerce")
+        converted = numbers(frame[column])
         if converted.notna().mean() >= 0.6:
             candidates.append(column)
     return candidates
@@ -35,7 +42,7 @@ def apply_filters(frame: pd.DataFrame, filters: dict[str, list[Any]]) -> pd.Data
 
 def summarize(frame: pd.DataFrame, dimension: str, metric: str, aggregation: str) -> pd.DataFrame:
     working = frame[[dimension, metric]].copy()
-    working[metric] = pd.to_numeric(working[metric], errors="coerce")
+    working[metric] = numbers(working[metric])
     working = working.dropna(subset=[metric])
     mapping = {"求和": "sum", "平均值": "mean", "计数": "count", "最大值": "max", "最小值": "min"}
     result = working.groupby(dimension, dropna=False)[metric].agg(mapping[aggregation]).reset_index()

@@ -25,12 +25,6 @@ function commitChartSeries(basket,incoming,mode,editUid){
   else result.push(...incoming.map(s=>({...s,uid:chartUid()})));
   return result;
 }
-function draftPeriodRange(fields,start,end){
-  const left=fields.indexOf(start),right=fields.indexOf(end);
-  if(left<0||right<0||right<=left)return {periods:[],error:'时间止列必须位于起列之后，请选择至少两列。'};
-  const periods=fields.slice(left,right+1);
-  return {periods,error:periodSelectionError(periods)};
-}
 function hierarchyChoices(rows,fields,chosen={}){
   let filtered=rows;const levels=[];
   for(const field of fields){

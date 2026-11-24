@@ -1,10 +1,6 @@
-# Design System Master File
+# 旧版 Streamlit 设计档案 · 2026-09-08
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
-
----
+本文件记录初版设计。现行网页样式位于 `web/`。
 
 **Project:** 经营数据查询助手
 **Generated:** 2026-09-08 07:31:54

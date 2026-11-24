@@ -178,6 +178,15 @@ function aggregateRows(data,series){
   });
   return result;
 }
+function overviewSeries(table, rows){
+  const preferred=metricFields(table)[0]?.name;
+  const mapping=inferChartMapping(table,rows,preferred);
+  const settings={...mapping,metric:mapping.metrics[0]||mapping.periods[0],
+    dimension:mapping.wide?chartDefaults(table).dimension:mapping.dimension,
+    axisMode:'auto',axisOrder:'auto',excludeTotals:true,filters:[],autoOperation:true};
+  const catalog=chartMetricCatalog(table,rows,settings);
+  return unifiedChartSpecs(settings,table,catalog)[0];
+}
 async function home(token){
 const tables=activeTables(),recommended=recommend();
 const metrics=[
@@ -186,9 +195,9 @@ const metrics=[
   ['可选参数',tables.reduce((n,t)=>n+t.fields.length,0),'全部字段均可进入对比','M4 5h12M4 10h12M4 15h12M8 3v4M12 8v4M7 13v4'],
   ['已导入行',tables.reduce((n,t)=>n+t.row_count,0),'包含明细、汇总和辅助区','M4 15V9m4 6V5m4 10v-4m4 4V3'],
 ];
-const cards=recommended.map((t,i)=>`<article class="card"><div class="cardtop"><h3>${esc(metricFields(t)[0].name)} · ${esc(chooseDimension(t))}</h3><span class="tag">${/日期|月份/.test(chooseDimension(t))?'趋势分析':'分类对比'}</span><p title="${esc(t.relative_path)}">${esc(t.file_name)} / ${esc(t.sheet_name)}</p></div><div class="mini-chart" id="mini${i}"></div><div class="cardfoot"><span>${t.row_count} 行 · ${esc(t.range_ref)}</span><button class="link" data-recommend="${t.id}">打开分析 ↗</button></div></article>`).join('');
+const cards=recommended.map((t,i)=>`<article class="card"><div class="cardtop"><h3>${esc(metricFields(t)[0].name)} · ${esc(chooseDimension(t))}</h3><span class="tag">${/日期|月份/.test(chooseDimension(t))?'趋势分析':'分类对比'}</span><p title="${esc(t.relative_path)}">${esc(t.file_name)} / ${esc(t.sheet_name)}</p></div><div class="mini-chart" id="mini${i}"></div><div class="cardfoot"><span>${t.row_count} 行 · ${esc(t.range_ref)}</span><button class="link" data-recommend="${t.id}" disabled>打开分析 ↗</button></div></article>`).join('');
 $('#main').innerHTML=`<h1 class="overview-heading">数据概览</h1><div class="stats">${metrics.map(([label,value,sub,icon])=>`<div class="stat"><div class="stat-head"><span>${label}</span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon}"/></svg></div><b>${fmt(value)}</b><span>${sub}</span></div>`).join('')}</div><div class="sectionhead"><div><h2>推荐分析</h2><p>根据字段类型生成起点，可随时调整指标与口径</p></div></div><div class="cards overview-cards">${cards}</div>`+(tables.length?'':empty('暂无数据','','<button id="emptyImport">导入文件</button>'));
-$('#emptyImport')?.addEventListener('click',()=>$('#importButton').click());document.querySelectorAll('[data-recommend]').forEach(b=>b.onclick=async()=>{configureChart(b.dataset.recommend,metricFields(tableById(b.dataset.recommend))[0].name);});
+$('#emptyImport')?.addEventListener('click',()=>$('#importButton').click());
 await Promise.all(recommended.map(async(t,i)=>{
   let data;
   try{data=await tableData(t.id);}catch{
@@ -196,17 +205,54 @@ await Promise.all(recommended.map(async(t,i)=>{
     return;
   }
   if(token!==renderToken)return;
-  const metric=metricFields(t)[0].name,dimension=chooseDimension(t),operation=/率|占比|比例/.test(metric)?'平均值':'求和';
-  const temporal=/日期|月份|年月/.test(dimension);
-  let values=[...aggregateRows(data,{dimension,metric,operation,excludeTotals:true})];
-  values=temporal?values.sort((a,b)=>a[0].localeCompare(b[0],'zh-CN',{numeric:true})).slice(-14):values.filter(([,v])=>v!==null).sort((a,b)=>b[1]-a[1]).slice(0,5).reverse();
+  const target=$('#mini'+i),card=target.closest('article'),button=card.querySelector('[data-recommend]');
+  let series,points;
+  try{
+    series=overviewSeries(t,data.rows);
+    points=aggregateRows(data,series);
+  }catch(error){target.textContent=error.message;return;}
+  const temporal=chartAxisIsTime(series,[...points.keys()]);
+  card.querySelector('h3').textContent=series.label;
+  card.querySelector('.tag').textContent=temporal?'趋势分析':'分类对比';
+  button.disabled=false;
+  button.onclick=()=>{
+    loadChartDraftFromSeries(series);
+    draft.previewActive=true;
+    state.openBuilder=true;state.chartPreview=null;go('compare');
+  };
+  const values=temporal?orderedTemporalKeys([points]).slice(-14).map(k=>[k,points.get(k)])
+    :[...points].filter(([,v])=>v!==null).sort((a,b)=>b[1]-a[1]).slice(0,5).reverse();
   chart($('#mini'+i),{tooltip:{trigger:'axis',confine:true},grid:{left:12,right:25,top:22,bottom:20,containLabel:true},
     xAxis:{type:temporal?'category':'value',data:temporal?values.map(v=>v[0]):undefined,splitLine:{lineStyle:{color:chartGrid,type:'dashed'}},axisLabel:{fontSize:11,hideOverlap:true}},
     yAxis:{type:temporal?'value':'category',data:temporal?undefined:values.map(v=>v[0]),splitLine:{lineStyle:{color:chartGrid,type:'dashed'}},axisTick:{show:false},axisLine:{show:false},axisLabel:{width:90,overflow:'truncate',fontSize:11}},
     series:[{type:temporal?'line':'bar',data:values.map(v=>v[1]),barMaxWidth:16,connectNulls:false,symbolSize:5,itemStyle:{borderRadius:[0,5,5,0],color:colors[0]},...(temporal?{lineStyle:{width:2},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(40,89,245,.18)'},{offset:1,color:'rgba(40,89,245,0)'}])}}:{})}]});
 }));}
 function bindTableActions(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>tableById(b.dataset.view)?.archived?viewTable(b.dataset.view):openOriginal(b.dataset.view));document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>configureChart(b.dataset.add,b.dataset.metric));}
-async function viewTable(id){const t=tableById(id),data=await tableData(id);state.viewId=id;const fields=t.fields.map(f=>f.name);$('#dialogBody').innerHTML=`<div class="eyebrow">SOURCE / 数据浏览</div><h2>${esc(t.table_name)}</h2><p class="meta">${esc(t.relative_path)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</p><div class="toolbar"><input id="rowSearch" placeholder="筛选当前表的内容"><button id="sourcePreview">查看原表</button><button id="rawButton">修正识别</button><button id="exportTable">导出 CSV</button></div><div class="toolbar"><select id="addMetric" aria-label="选择字段">${options(fields,metricFields(t)[0]?.name)}</select><button class="primary" id="addTableMetric">配置图表 →</button></div><div id="rows"></div><p class="meta" id="rowCount"></p>`;let shown=data.rows;const show=()=>{$('#rows').innerHTML=grid(shown.slice(0,200),['_source_row',...fields]);$('#rowCount').textContent=`共 ${shown.length} 行，预览前 200 行；_source_row 为 Excel 来源行。`;};show();$('#rowSearch').oninput=e=>{shown=data.rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(e.target.value.toLowerCase())));show();};$('#addTableMetric').onclick=()=>configureChart(id,$('#addMetric').value);$('#exportTable').onclick=()=>exportCSV(shown,fields,t.table_name+'.csv');$('#sourcePreview').onclick=()=>openOriginal(id);$('#rawButton').onclick=()=>rawDialog(id);if(!$('#dialog').open)$('#dialog').showModal();}
+function bindRegionRows(root,table,data,{initialPreview=false}={}){
+  const fields=table.fields.map(f=>f.name);
+  const input=root.querySelector('[data-row-filter]'),out=root.querySelector('[data-row-results]');
+  let shown=data.rows;
+  function update(){
+    const words=input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    shown=words.length?data.rows.filter(row=>words.every(word=>fields.some(field=>
+      String(row[field]??'').toLowerCase().includes(word)))):data.rows;
+    out.innerHTML=initialPreview||words.length?
+      `<p class="meta">匹配 ${shown.length} 行，预览前 200 行。</p>`+grid(shown.slice(0,200),['_source_row',...fields]):'';
+  }
+  input.oninput=update;
+  root.querySelector('[data-row-export]').onclick=()=>exportCSV(shown,fields,table.table_name+'.csv');
+  update();
+}
+async function viewTable(id){
+  const table=tableById(id),data=await tableData(id),root=$('#dialogBody');
+  const fields=table.fields.map(f=>f.name);
+  root.innerHTML=`<h2>${esc(table.table_name)}</h2><p class="meta">${esc(table.relative_path)} / ${esc(table.sheet_name)} / ${esc(table.range_ref)}</p>
+    <div class="toolbar"><input data-row-filter type="search" aria-label="筛选当前区域" placeholder="筛选当前区域"><button data-row-export>导出 CSV</button></div>
+    <div class="toolbar"><select id="addMetric" aria-label="选择字段">${options(fields,metricFields(table)[0]?.name)}</select><button id="addTableMetric">配置图表 →</button></div><div data-row-results></div>`;
+  bindRegionRows(root,table,data,{initialPreview:true});
+  $('#addTableMetric').onclick=()=>configureChart(id,$('#addMetric').value);
+  if(!$('#dialog').open)$('#dialog').showModal();
+}
 async function rawDialog(id){
 const t=tableById(id);
 $('#dialogBody').innerHTML=`<div class="eyebrow">RECOGNITION / 识别修正</div><h2>调整识别规则</h2><p class="meta">${esc(t.file_name)} / ${esc(t.sheet_name)}</p><button id="correctionSource">在数据管理中核对原表</button><div class="formgrid"><label>数据区域（第一行为表头）<input id="correctRange" value="${esc(t.range_ref)}"></label><label>表名<input id="correctName" value="${esc(t.table_name)}"></label><button class="primary" id="correctSave">保存识别规则并重新读取</button><p class="meta">规则单独保存，不修改原文件。离开弹窗前请先保存修改。</p></div>`;
@@ -214,11 +260,9 @@ $('#correctionSource').onclick=()=>openOriginal(id);
 if(!$('#dialog').open)$('#dialog').showModal();
 $('#correctSave').onclick=async()=>{try{$('#correctSave').disabled=true;await api('recognition',{id,range:$('#correctRange').value.trim().toUpperCase(),name:$('#correctName').value});$('#dialog').close();await refreshCatalog({force:true});go(state.page,{background:true});toast('规则已保存，原文件未修改');}catch(e){toast(e.message);}finally{if($('#correctSave'))$('#correctSave').disabled=false;}};
 }
-async function addSeries(id,metric){const t=tableById(id);if(!t)throw Error('数据表已更新，请重新选择');const data=await tableData(id);const periods=t.fields.map(f=>f.name).filter(c=>/^(\d{4}[-年/])?\d{1,2}(月|[-/]\d{1,2}|$)/.test(c));state.basket.push({id,metric,dimension:chooseDimension(t),operation:/率|占比|比例|%/.test(metric)?'平均值':'求和',label:metric+' · '+t.table_name,filterField:'',filterValue:'',excludeTotals:true,wide:false,periods,uid:Date.now()+Math.random()});persistBasket();toast('已加入对比 · '+metric);}
-function picker(){const fields=state.tables.flatMap(t=>t.fields.map(f=>({t,f})));$('#dialogBody').innerHTML=`<div class="eyebrow">FIELD LIBRARY / 全部参数</div><h2>选择要对比的参数</h2><p class="meta">所有文件与数据表的全部字段。选择后可以分别设置筛选与对齐维度。</p><div class="toolbar"><input id="fieldSearch" type="search" placeholder="搜索参数、文件、工作表…" autofocus></div><div id="fieldResults"></div>`;const show=()=>{const words=$('#fieldSearch').value.toLowerCase().split(/\s+/).filter(Boolean);const found=fields.filter(({t,f})=>words.every(w=>(t.relative_path+' '+t.sheet_name+' '+t.table_name+' '+f.name).toLowerCase().includes(w)));$('#fieldResults').innerHTML=`<p class="meta">匹配 ${found.length} 个字段，显示前 80 个；输入关键词缩小范围。</p><div class="tablewrap"><table><thead><tr><th>参数</th><th>来源</th><th></th></tr></thead><tbody>${found.slice(0,80).map(({t,f})=>`<tr><td><b>${esc(f.name)}</b><span class="rowmeta">${f.type==='number'?'数值':f.type==='date'?'时间':'文本 / 可计数'}</span></td><td>${esc(t.table_name)}<span class="rowmeta">${esc(t.file_name)} / ${esc(t.sheet_name)} / ${esc(t.range_ref)}</span></td><td><button data-add="${t.id}" data-metric="${esc(f.name)}">加入 ＋</button></td></tr>`).join('')}</tbody></table></div>`;bindTableActions();};$('#fieldSearch').oninput=show;show();$('#dialog').showModal();$('#fieldSearch').focus();$('#dialog').addEventListener('close',()=>{if(state.page==='compare')go('compare');},{once:true});}
-async function compare(token){
+async function renderChartCanvas(token){
   if(state.chartType==='horizontal'){state.chartType='bar';state.axisSwapped=true;}
-  $('#main').innerHTML=header('对比分析')+`<div class="split"><section><div id="seriesList"></div></section><section><div class="panel"><div class="charttools"><label>图表 <select id="chartType">${options(['auto','bar','line','facet','table'],state.chartType)}</select></label><label>显示 <select id="chartLimit">${options(['10','20','50','100','全部'],String(state.limit))}</select></label><button id="saveView">☆ 保存分析</button><button id="png">导出图表</button></div><p id="recommendNote" class="meta" role="status"></p><div id="facetControls" class="charttools" aria-label="分面图分页" style="display:none"></div><div id="compareChart" class="compare-chart"></div></div><div class="panel"><div class="sectionhead" style="margin-top:0"><h2>数值对比</h2><button id="exportCompare">导出 CSV</button></div><label class="meta"><input id="baseline" type="checkbox" ${state.baseline?'checked':''}> 口径与单位相同，计算相对第一组的差值和变化率</label><div id="compareGrid" style="margin-top:16px"></div><p class="meta">基准为 0 或缺失时，变化率留空。不同时间粒度不计算组间差值。</p></div></section></div>`;
+  $('#main').innerHTML=header('图表展示')+`<div class="studio-layout"><section><div class="panel"><div class="chart-section-heading"><h2>图表画布</h2><span id="chartStage" class="preview-status" role="status"></span></div><div class="charttools"><label>图表 <select id="chartType">${options(['auto','bar','line','facet','table'],state.chartType)}</select></label><label>显示 <select id="chartLimit">${options(['10','20','50','100','全部'],String(state.limit))}</select></label><button id="swapAxes">${state.axisSwapped?'恢复默认方向':'切换 X / Y'}</button><button id="saveView">☆ 保存分析</button><button id="png">导出图表</button></div><p id="recommendNote" class="meta" role="status"></p><div id="facetControls" class="charttools" aria-label="分面图分页" style="display:none"></div><div id="compareChart" class="compare-chart"></div></div><details class="numeric-details"><summary>查看数值明细、差值与导出</summary><div class="panel"><div class="sectionhead" style="margin-top:0"><h2>数值对比</h2><button id="exportCompare">导出 CSV</button></div><label class="meta"><input id="baseline" type="checkbox" ${state.baseline?'checked':''}> 口径与单位相同，计算相对第一组的差值和变化率</label><div id="compareGrid" style="margin-top:16px"></div><p class="meta">基准为 0 或缺失时，变化率留空。不同时间粒度不计算组间差值。</p></div></details></section></div>`;
   const chartNames={auto:'推荐默认',bar:'分组柱状',line:'趋势折线',facet:'独立分面',table:'仅表格'};
   Array.from($('#chartType').options).forEach(o=>o.textContent=chartNames[o.value]);
   await Promise.all((state.chartPreview||state.basket).map(s=>tableData(s.id).catch(()=>null)));if(token!==renderToken)return;

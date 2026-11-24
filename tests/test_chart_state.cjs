@@ -86,24 +86,10 @@ test('exactly eight series are allowed and an empty commit is rejected',()=>{
   assert.throws(()=>c.commitChartSeries(baseBasket(),[],'replace'),/至少/);
 });
 
-test('manual time range rejects reversed, equal and missing endpoints',()=>{
-  const fields=['指标','2026-01','2026-02','2026-03'];
-  for(const [start,end] of [['2026-03','2026-01'],['2026-02','2026-02'],['不存在','2026-03']]){
-    const result=c.draftPeriodRange(fields,start,end);
-    assert.ok(result.error);
-    assert.deepEqual(plain(result.periods),[]);
+test('time columns reject duplicate periods and colliding actual and forecast dates',()=>{
+  for(const periods of [['2026-01','2026年1月'],['2026-01(实际)','2026-01(预测)']]){
+    assert.ok(c.periodSelectionError(periods,{minPeriods:1}));
   }
-  assert.deepEqual(plain(c.draftPeriodRange(fields,'2026-01','2026-03')),{periods:fields.slice(1),error:''});
-});
-
-test('manual time range rejects colliding actual/forecast columns',()=>{
-  const fields=['项目','2026-01(实际)','2026-01(预测)','2026-02(实际)'];
-  assert.ok(c.draftPeriodRange(fields,fields[1],fields[3]).error);
-});
-
-test('manual time range rejects duplicate periods with different spellings',()=>{
-  const fields=['项目','2026-01','2026年1月','2026-02'];
-  assert.ok(c.draftPeriodRange(fields,fields[1],fields[3]).error);
 });
 
 test('hierarchy choices cascade and clear invalid downstream selections',()=>{

@@ -15,6 +15,21 @@ const column=name=>c.chartColumnInputKey(name);
 function compile(source,rows,draft){const catalog=c.chartMetricCatalog(source,rows,draft);return {catalog,specs:c.unifiedChartSpecs(draft,source,catalog)};}
 function values(source,rows,spec){return plain([...c.aggregateRows({rows,fields:source.fields,columns:source.fields.map(f=>f.name)},spec)]);}
 
+vm.runInContext(app.slice(app.indexOf('function metricScore'),app.indexOf('function chooseDimension')),c);
+test('overview and reopened series keep the same metric, time direction and values',()=>{
+  const cumulative=table([['车型','text'],['累计销量','number']]);
+  const rows=[100,200,300,400,500].map(n=>({车型:'M8',累计销量:n}));
+  const spec=c.overviewSeries(cumulative,rows);
+  assert.equal(spec.operation,'最新值');
+  assert.deepEqual(values(cumulative,rows,spec),[['M8',500]]);
+  const months=['2026年1月','2026年2月','2026年3月'];
+  const wide=table([['车型','text'],['指标','text'],...months.map(m=>[m,'number'])]);
+  const wideRows=[{车型:'M8',指标:'销量',[months[0]]:100,[months[1]]:120,[months[2]]:140}];
+  const tall=table([['月份','text'],['销量','number']]);
+  const tallRows=months.map(m=>({月份:m,销量:wideRows[0][m]}));
+  assert.deepEqual(values(wide,wideRows,c.overviewSeries(wide,wideRows)),values(tall,tallRows,c.overviewSeries(tall,tallRows)));
+});
+
 test('vertical metrics select actual cell values and retain each statistic',()=>{
   const draft={dimension:'月份',inputKeys:[column('销量'),column('库存')],filters:[{field:'车型',value:'M8'}],autoOperation:true};
   const {specs}=compile(records,recordRows,draft);

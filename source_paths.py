@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from runtime_paths import source_base
+from runtime_paths import planhub_data_root, source_base
 
 
 def resolve_source_path(root, value):
@@ -16,8 +16,7 @@ def shared_data_root(root):
     configured = os.environ.get("SHARED_DATA_ROOT", "").strip()
     if configured:
         return resolve_source_path(source_base(root), configured).resolve()
-    data_root = os.environ.get("PLANHUB_DATA_ROOT", "").strip() or "../工作台数据"
-    shared_root = resolve_source_path(root, data_root) / "shared"
+    shared_root = planhub_data_root(root) / "shared"
     return shared_root if shared_root.is_dir() else None
 
 

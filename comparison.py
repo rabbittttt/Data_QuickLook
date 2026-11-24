@@ -3,15 +3,7 @@ import json
 import re
 
 import pandas as pd
-import plotly.express as px
-import streamlit as st
-
-
-def numbers(series):
-    text = series.astype('string').str.strip().str.replace(',', '', regex=False).str.replace('，', '', regex=False)
-    percent = text.str.endswith('%', na=False)
-    result = pd.to_numeric(text.str.removesuffix('%'), errors='coerce').astype('Float64')
-    return result.where(~percent, result / 100)
+from analysis_engine import numbers
 
 
 def aggregate(frame, dimension, metric, operation):
@@ -38,6 +30,9 @@ def field_registry(catalog):
 
 
 def render_comparison(store, catalog):
+    import plotly.express as px
+    import streamlit as st
+
     st.subheader('跨表对比')
     st.caption('从所有已识别表格中搜索任意字段；每组单独指定维度和筛选，再按维度值对齐。来源不同的指标不会自动相加。')
     registry = field_registry(catalog)
@@ -48,7 +43,7 @@ def render_comparison(store, catalog):
     available = list(dict.fromkeys([k for k in selected_before if k in registry] + available))
     default = next((key for key in available if any(w in key[1] for w in ('销量', '订单量', '交付量'))), None)
     selected = st.multiselect('对比参数（可跨文件、多选）', available, default=[default] if default else [],
-                             format_func=registry.get, key='compare_fields', max_selections=8)
+                             format_func=registry.get, key='compare_fields')
     if not selected:
         st.info('选择一个或多个参数，即可生成推荐图表和对比表。')
         return

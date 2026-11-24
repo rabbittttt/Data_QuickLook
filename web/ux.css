@@ -6,7 +6,7 @@
   --text-secondary:#606775;
 }
 body{font-size:14px;line-height:1.55}
-img.brandmark{display:block;flex-shrink:0;background:transparent;border-radius:0;object-fit:contain}
+img.brandmark{width:28px;height:28px;display:block;flex-shrink:0;background:transparent;border-radius:0;object-fit:contain}
 main,.app,.pagehead>div,.sectionhead>div{min-width:0}
 main,main :is(button,input,select,summary,[tabindex]){scroll-margin-top:16px;scroll-margin-bottom:16px}
 h1{font-size:21px;line-height:1.35;letter-spacing:-.25px}
@@ -148,7 +148,6 @@ button.link{min-height:32px;padding:4px 6px}
 }
 .sidebar-heading{grid-area:brand;display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
 .workspace-header .brand{color:var(--ink);padding:0;white-space:nowrap;letter-spacing:0;font-size:17px;gap:8px;min-width:0}
-.workspace-header .brandmark{width:28px;height:28px}
 .workspace-header .brand small{color:var(--muted);display:block;font-size:var(--type-note);letter-spacing:1px}
 .workspace-header .search{grid-area:search;width:100%;min-width:0;max-width:340px;min-height:34px;gap:6px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:#f8f9fb;color:var(--muted)}
 .workspace-header .search input{width:100%;min-width:0;min-height:32px;padding:5px 0;border:0;background:transparent;color:#0b0d17;font-size:12px}
@@ -473,7 +472,6 @@ main { padding-top: var(--dashboard-gap); }
     height: var(--toolbar-height);
   }
   .compact-toolbar .brand { display: flex; align-items: center; gap: 8px; padding: 0; font-size: var(--type-title); color: var(--ink); }
-  .compact-toolbar .brandmark { width: 28px; height: 28px; }
   .compact-toolbar .sidebar-toggle { margin: 0; }
   #compactNav { height: var(--navigation-height); }
   #compactNav #nav {

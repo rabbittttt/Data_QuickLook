@@ -19,7 +19,7 @@
 
 换电脑后应重新创建 `Project/.venv`，不要直接复制旧电脑的虚拟环境。整体移动 `Project` 时保留项目与共享目录的相对位置；`Project` 的上级目录和盘符可以不同。
 
-`启动数据速查.cmd` 从脚本所在目录向上找到最近名为 `Project` 的目录，固定使用其中 `.venv\Scripts\python.exe`，忽略子项目自己的 `.venv`，也不回退 PATH 或 Codex Python。可用 `DATA_QUICKLOOK_PYTHON` 显式指定其他解释器文件；相对路径按本项目目录解析。启动脚本检查 Python 3.11 或更新版本，以及主服务依赖 `pandas` 和 `openpyxl`。完整的 `requirements.txt` 也包含旧版 Streamlit 入口 `app.py` 的依赖。
+`启动数据速查.cmd` 从脚本所在目录向上找到最近名为 `Project` 的目录，固定使用其中 `.venv\Scripts\python.exe`，忽略子项目自己的 `.venv`，也不回退 PATH 或 Codex Python。可用 `DATA_QUICKLOOK_PYTHON` 显式指定其他解释器文件；相对路径按本项目目录解析。启动脚本检查 Python 3.11 或更新版本，以及主服务依赖 `pandas` 和 `openpyxl`。旧版界面的额外依赖列在 `requirements-legacy.txt`。
 
 也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:9473)；命令行使用 `..\.venv\Scripts\python.exe server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:9473`。
 
@@ -117,15 +117,26 @@ Get-ChildItem tests/test_*.cjs | ForEach-Object {
 }
 ```
 
+推送及拉取请求会触发 GitHub Actions。验收使用临时发布包和单独的数据目录，记录门户导入与查询、接口耗时、图标摘要，以及桌面和窄屏组件截图。前后版本在同一台运行机上截图，差异图和结果保存在 `quicklook-verification` 构件中。视觉变化供审阅，业务断言失败会阻止验收通过。
+
+本机复验需要额外的测试依赖。输出目录必须是新目录。
+
+```powershell
+python -m pip install -r requirements-legacy.txt playwright Pillow
+python -m playwright install chromium
+python -B scripts/verify_portal.py --output "$env:TEMP/quicklook-check-$(Get-Date -Format yyyyMMddHHmmss)"
+```
+
 ## 旧版兼容入口
 
 保留原 Streamlit 页面供兼容使用：
 
 ```powershell
-streamlit run app.py
+python -m pip install -r requirements-legacy.txt
+python -m streamlit run app.py
 ```
 
 旧入口与新版网页不是同一套界面，不包含上述全部图表映射与交互改进；日常使用建议启动 `server.py`。旧版的规则式问数不代表新版已实现大模型分析能力。
 
 
-解析版本根据 excel_parser.py、warehouse.py、runtime_paths.py 和 requirements.txt 的内容自动计算，不再手动递增。重启服务后，共享文件按原稳定窗口重新解析，历史上传文件在启动时检查；同版同文件跳过，失败保留旧表和旧签名、后续可重试。该机制不修改源 Excel，不把业务数据库或配置装入发布包；更换源码后需重启服务，解析代码与版本一起生效。
+解析签名跟踪 Excel 识别代码、pandas 与 openpyxl 的安装版本及入库存储格式版本。修改搜索、部署路径或旧版界面依赖不会使已入库文件重新解析。变更入库字段的含义或存储格式时，应同步更新 `excel_parser.py` 中的 `STORAGE_FORMAT_VERSION`。切换到新的签名规则后，首次同步会重新核对并解析原有文件。

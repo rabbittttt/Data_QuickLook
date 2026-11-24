@@ -84,9 +84,7 @@ function bindStudioPicker(id,items,selected,onChange){
 async function chartStudio(token){
   normalizeSeriesIds(state.basket);
   state.chartPreview=null;
-  await compare(token);if(token!==renderToken)return;
-  $('#main .pagehead').outerHTML=header('图表展示');
-  const layout=$('#main .split');layout.className='studio-layout';layout.firstElementChild.remove();
+  await renderChartCanvas(token);if(token!==renderToken)return;
   const settingsCard=document.createElement('section');settingsCard.className='panel studio-settings-card';settingsCard.setAttribute('aria-label','图表设置');
   const seriesToolbar=document.createElement('div');seriesToolbar.className='series-toolbar';seriesToolbar.innerHTML='<div>'+(state.chartUndo?'<button id="undoChartChange">撤销上次图表改动</button> ':'')+'<button id="studioNew">新建图表 / 对比 ＋</button><button id="studioRaw">查看原始表格</button></div>';settingsCard.append(seriesToolbar);
   seriesToolbar.querySelector('#studioRaw').onclick=()=>{
@@ -116,10 +114,8 @@ async function chartStudio(token){
     state.chartPreview=null;persistBasket();go('compare');
   });
   $('#studioNew').onclick=()=>{resetChartDraft(draft.id||state.basket[0]?.id);builder.open=true;mountBuilder(token);};
-  const chartHeading=document.createElement('div');chartHeading.className='chart-section-heading';chartHeading.innerHTML='<h2>图表画布</h2><span id="chartStage" class="preview-status" role="status"></span>';$('#chartType').closest('.charttools').before(chartHeading);
-  const swap=document.createElement('button');swap.id='swapAxes';swap.textContent=state.axisSwapped?'恢复默认方向':'切换 X / Y';$('#saveView').before(swap);
+  const swap=$('#swapAxes');
   swap.onclick=()=>{state.axisSwapped=!state.axisSwapped;swap.textContent=state.axisSwapped?'恢复默认方向':'切换 X / Y';drawComparison();};
-  const numericPanel=$('#compareGrid').closest('.panel'),fold=document.createElement('details');fold.className='numeric-details';fold.innerHTML='<summary>查看数值明细、差值与导出</summary>';numericPanel.before(fold);fold.append(numericPanel);
   if(!draft.id&&!draft.sourcePath){resetChartDraft(state.basket[0]?.id||recommend()[0]?.id||activeTables()[0]?.id);draft.previewActive=!state.basket.length;}
   await mountBuilder(token);if(token!==renderToken)return;state.charts.forEach(c=>c.resize());
   if(typeof uiFeedback==='function')uiFeedback($('#chartStage'),'status');
@@ -369,16 +365,9 @@ async function inspectRegion(id,token){
     const t=tableById(id),data=await tableData(id);
     if(token!==renderToken||!panel.isConnected||$('#sourceRegion')?.value!==id)return;
     const fields=t.fields.map(f=>f.name);
-    panel.innerHTML=`<div class="sectionhead"><h3>${esc(t.table_name)} · ${esc(t.range_ref)}</h3><button id="closeInspector">收起</button></div><p class="meta">${data.rows.length} 行 · ${fields.length} 个字段${t.issues.length?' · '+esc(t.issues.join('；')):''}</p><div class="toolbar"><label>筛选当前区域<input id="regionFilter" type="search" placeholder="输入内容，筛选匹配行"></label><button id="regionExport">导出当前区域 CSV</button></div><details><summary>查看全部字段</summary><p>${fields.map(f=>`<span class="tag">${esc(f)}</span>`).join(' ')}</p></details><div id="regionMatches"></div>`;
-    let filtered=data.rows;
+    panel.innerHTML=`<div class="sectionhead"><h3>${esc(t.table_name)} · ${esc(t.range_ref)}</h3><button id="closeInspector">收起</button></div><p class="meta">${data.rows.length} 行 · ${fields.length} 个字段${t.issues.length?' · '+esc(t.issues.join('；')):''}</p><div class="toolbar"><label>筛选当前区域<input id="regionFilter" data-row-filter type="search" placeholder="输入内容，筛选匹配行"></label><button id="regionExport" data-row-export>导出当前区域 CSV</button></div><details><summary>查看全部字段</summary><p>${fields.map(f=>`<span class="tag">${esc(f)}</span>`).join(' ')}</p></details><div id="regionMatches" data-row-results></div>`;
     $('#closeInspector').onclick=()=>panel.remove();
-    $('#regionFilter').oninput=e=>{
-      const words=e.target.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      filtered=data.rows.filter(r=>words.every(w=>fields.some(f=>String(r[f]??'').toLowerCase().includes(w))));
-      $('#regionMatches').innerHTML=words.length?`<p class="meta">匹配 ${filtered.length} 行，预览前 200 行；导出包含全部匹配行。</p>`+grid(filtered.slice(0,200),['_source_row',...fields]):'';
-      $('#regionExport').textContent=words.length?'导出筛选结果 CSV':'导出当前区域 CSV';
-    };
-    $('#regionExport').onclick=()=>exportCSV(filtered,fields,t.table_name+'.csv');
+    bindRegionRows(panel,t,data);
   }catch(e){if(panel.isConnected)panel.textContent='无法读取区域：'+e.message;}
 }
 async function rawPage(token){

@@ -24,6 +24,7 @@ RUNTIME_FILES = (
     "warehouse.py",
     "workspace_relocation.py",
     "requirements.txt",
+    "requirements-legacy.txt",
     "README.md",
     "启动数据速查.cmd",
 )
