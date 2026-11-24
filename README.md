@@ -2,11 +2,11 @@
 
 持久目录统一为同级工作区的 `工作台数据/database/quicklook/`；独立运行与门户运行读取同一位置。可用 `PLANHUB_DATA_ROOT` 指定数据根（相对路径按应用根解析），应用原有显式数据目录参数继续优先。程序发布不携带业务数据库；发布版使用 `planhub-runtime/database/quicklook/`。共享 Excel 仍在原共享目录，数据库集中不改变业务口径。首次升级必须停服迁移，旧目录改名为 `.pre-central-*` 恢复备份，不再参与运行。
 
-> 此公开仓库只保存程序代码；`input_file`、`output_file`、数据库、日志和压缩包不会上传。换电脑后需要自行安全迁移业务 Excel。下载代码可运行 `git clone https://github.com/rabbittttt/Data_QuickLook.git`，以后在仓库目录运行 `git pull` 更新。
+仓库保存应用源码。换机时将仓库检出到 `Project/数据速查/`，从 Project 根重建共享 Python 环境；共享原件、已上传 Excel 和数据库分别迁移。在服务停止后复制完整的 `工作台数据/database/quicklook/`，即可同时保留仓库数据、识别规则及上传原件。
 
 通过网页导入 Excel 的数据查询与图表分析工具。主入口为独立网页：数据概览、数据管理、图表展示、收藏的分析。读取和分析不会修改原始 Excel。
 
-已克隆旧仓库的用户可运行 `git remote set-url origin https://github.com/rabbittttt/Data_QuickLook.git` 更新远程地址。旧地址仍可通过 GitHub 重定向访问，建议更新为新地址。
+源码仓库为 [Data_QuickLook](https://github.com/rabbittttt/Data_QuickLook)。在 Project 根执行 `git clone https://github.com/rabbittttt/Data_QuickLook.git 数据速查`，后续在仓库内执行 `git pull`。
 
 ## 安装与启动
 
@@ -23,7 +23,7 @@
 
 也可双击 `启动数据速查.cmd`，服务启动后会自动用默认浏览器打开 [本地分析页](http://127.0.0.1:9473)；命令行使用 `..\.venv\Scripts\python.exe server.py --open-browser` 效果相同。重复双击时，如服务已运行，会直接打开现有页面。首次启动的命令窗口需保持打开，服务仅监听本机 `127.0.0.1:9473`。
 
-更新代码后普通刷新网页即可检查新版页面、样式、脚本和图标：静态资源按文件内容自动生成版本号，未变化的内容仍可复用缓存。若更新包含 `server.py` 等 Python 后端代码，需先重启服务（本次缓存策略更新也需要重启一次）。已打开的页面不会自动重载，以保留正在编辑的内容；“同步数据”仍只负责 Excel 数据更新。
+更新代码后普通刷新网页即可检查新版页面、样式、脚本和图标：静态资源按文件内容自动生成版本号，未变化的内容仍可复用缓存。若更新包含 `server.py` 等 Python 后端代码，需先重启服务。已打开的页面不会自动重载，以保留正在编辑的内容；“同步数据”仍只负责 Excel 数据更新。
 
 ## 文件导入与更新
 
@@ -33,22 +33,23 @@
 
 旧版已入库的数据继续可查。旧 input_file 及旧工作区目录设置已退出运行，原表入口只读取共享目录和上传目录。上传只覆盖系统上传目录中的同名文件。正在编辑的图表发现更新时，保留草稿并允许手动载入更新。
 
-共享目录默认使用项目同级的 `工作台数据/shared/`，递归读取其中所有 `.xlsx`、`.xlsm`。发布部署可用 `SHARED_DATA_ROOT` 指定共享根。服务启动即执行第一次检查，已入库且未变化的文件跳过，新增和变化文件均需经过稳定观察。原表列表会列出稳定的共享工作簿，即使暂未识别出数据区域。
+共享目录默认使用 `PLANHUB_DATA_ROOT/shared/`；未设置 `PLANHUB_DATA_ROOT` 时使用项目同级的 `工作台数据/shared/`。指定 `SHARED_DATA_ROOT` 可直接选择其他共享根。服务递归扫描其中支持的 `.xlsx` 和 `.xlsm`。服务启动即执行第一次检查，已入库且未变化的文件跳过，新增和变化文件均需经过稳定观察。原表列表会列出稳定的共享工作簿，即使暂未识别出数据区域。
 
 ## PlanHub 正式发布
 
 从数据速查项目根目录构建版本包。发布目录已存在时，构建会停止，避免覆盖现有版本。
 
 ```powershell
-..\.venv\Scripts\python.exe -B scripts/build_release.py --version 2026.11.10.1
+$version = Read-Host '输入新发布版本'
+..\.venv\Scripts\python.exe -B scripts/build_release.py --version $version
 ```
 
-默认输出为 `output_file/releases/quicklook-2026.11.10.1`，外层只有 `app-release.json` 和 `payload/`。清单记录每个发布文件的大小及 SHA-256。Python 运行时及其依赖安装在版本目录外，按 `payload/requirements.txt` 安装。
+默认输出为 `output_file/releases/quicklook-<版本>`，外层只有 `app-release.json` 和 `payload/`。清单记录每个发布文件的大小及 SHA-256。Python 运行时及其依赖安装在版本目录外，按 `payload/requirements.txt` 安装。
 
-沿用原数据时，先停止旧实例并备份持久目录。下面从数据速查原项目根目录执行，直接指向集中持久目录。发布目录放到其他位置时，将 `$release` 改为实际发布包路径。
+沿用原数据时，先停止旧实例并备份持久目录。工作台正式版由交付包的 Docker 启动入口管理，数据保存在包外 `planhub-runtime/database/quicklook/`，服务日志由门户集中在 `planhub-runtime/logs/quicklook/`。以下命令用于单独核验构建产物，从数据速查原项目根目录执行并复用上面的 `$version`。发布目录放到其他位置时，将 `$release` 改为实际发布包路径。
 
 ```powershell
-$release = (Resolve-Path './output_file/releases/quicklook-2026.11.10.1').Path
+$release = (Resolve-Path "./output_file/releases/quicklook-$version").Path
 $python = (Resolve-Path '../.venv/Scripts/python.exe').Path
 $env:DATA_QUICKLOOK_DATA_DIR = (Resolve-Path '../工作台数据/database/quicklook').Path
 $env:SHARED_DATA_ROOT = (Resolve-Path '../工作台数据/shared').Path
@@ -59,7 +60,7 @@ $env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
 ```
 
 - `DATA_QUICKLOOK_DATA_DIR` 指定持久目录，内含 `warehouse.db`、`recognition.json` 和上传原件 `uploads/`。版本切换时让旧实例退出，再用同一持久目录启动新实例。
-- `SHARED_DATA_ROOT` 指向包含「订单汇总」「原始销量」等子目录的共享根。默认使用项目同级的 `工作台数据/shared`，单独指定 `DATA_QUICKLOOK_DATA_DIR` 时也按此默认位置解析共享根。
+- `SHARED_DATA_ROOT` 指向包含「订单汇总」「原始销量」等子目录的共享根。显式相对值按来源基目录解析：优先 `DATA_QUICKLOOK_SOURCE_BASE`，其次为显式 `DATA_QUICKLOOK_DATA_DIR` 的上一级，均未指定时为项目目录。留空则使用 `PLANHUB_DATA_ROOT/shared/` 或默认的 `../工作台数据/shared/`。工作台正式启动时会传入实际路径。
 - 门户固定入口为 `/quicklook/`，整个子树代理到本机服务 `127.0.0.1:9473`。代理保留或剥离前缀均可，须保留查询参数、请求方法、上传正文和内容长度。导入上限为 256 MiB。CSV 和图表图片由浏览器根据已加载的数据生成。
 - 将 `DATA_QUICKLOOK_PUBLIC_ORIGIN` 设为实际门户的协议、域名及非默认端口。后端仅接受回环 Host 或该配置指定的 Host，写入请求的 Origin 须与门户来源或本地 HTTP 来源匹配。健康检查使用后端 `GET /healthz` 或门户 `GET /quicklook/healthz`，返回 `{"ok":true,"app":"quicklook"}`。
 - 门户侧只需确认固定入口、通用前缀代理、上传限制和健康探针。后续升级时切换服务指向新版 `payload/server.py`，沿用原持久目录、监听端口和公共前缀，然后重启数据速查。新增前缀内接口不需要另加代理规则。
@@ -107,10 +108,21 @@ $env:DATA_QUICKLOOK_PUBLIC_ORIGIN = 'https://planhub.example.com'
 
 ## 验证
 
-需要 Python 和 Node.js。在项目根目录运行全部 Python 与前端回归测试：
+在项目根目录运行全部 Python 与前端回归测试。下面在临时目录初始化测试仓库和共享来源，测试退出后恢复当前 PowerShell 的路径设置。
 
 ```powershell
-python -m unittest discover -s tests -v
+$testRoot = Join-Path $env:TEMP ('quicklook-tests-' + [guid]::NewGuid())
+$oldData = $env:DATA_QUICKLOOK_DATA_DIR
+$oldShared = $env:SHARED_DATA_ROOT
+try {
+    $env:DATA_QUICKLOOK_DATA_DIR = Join-Path $testRoot 'state'
+    $env:SHARED_DATA_ROOT = Join-Path $testRoot 'shared'
+    ..\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
+    if ($LASTEXITCODE -ne 0) { throw 'Python 测试失败' }
+} finally {
+    $env:DATA_QUICKLOOK_DATA_DIR = $oldData
+    $env:SHARED_DATA_ROOT = $oldShared
+}
 Get-ChildItem tests/test_*.cjs | ForEach-Object {
     node $_.FullName
     if ($LASTEXITCODE -ne 0) { throw "测试失败：$($_.Name)" }
@@ -122,9 +134,9 @@ Get-ChildItem tests/test_*.cjs | ForEach-Object {
 本机复验需要额外的测试依赖。输出目录必须是新目录。
 
 ```powershell
-python -m pip install -r requirements-legacy.txt playwright Pillow
-python -m playwright install chromium
-python -B scripts/verify_portal.py --output "$env:TEMP/quicklook-check-$(Get-Date -Format yyyyMMddHHmmss)"
+..\.venv\Scripts\python.exe -m pip install -r requirements.txt playwright Pillow
+..\.venv\Scripts\python.exe -m playwright install chromium
+..\.venv\Scripts\python.exe -B scripts/verify_portal.py --output "$env:TEMP/quicklook-check-$(Get-Date -Format yyyyMMddHHmmss)"
 ```
 
 ## 旧版兼容入口
@@ -132,8 +144,8 @@ python -B scripts/verify_portal.py --output "$env:TEMP/quicklook-check-$(Get-Dat
 保留原 Streamlit 页面供兼容使用：
 
 ```powershell
-python -m pip install -r requirements-legacy.txt
-python -m streamlit run app.py
+..\.venv\Scripts\python.exe -m pip install -r requirements-legacy.txt
+..\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
 旧入口与新版网页不是同一套界面，不包含上述全部图表映射与交互改进；日常使用建议启动 `server.py`。旧版的规则式问数不代表新版已实现大模型分析能力。
