@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from zipfile import ZipFile
+from xml.etree import ElementTree as ET
 
 from openpyxl import Workbook
 from server import original_sheet, workbook_info
@@ -29,8 +30,14 @@ class OriginalSheetTests(unittest.TestCase):
                         for name in original.namelist():
                             content = original.read(name)
                             if name == 'xl/worksheets/sheet1.xml':
-                                content = content.replace(b'<dimension ref="B3:BK101"/>', dimension)
-                                content = content.replace(b'<f>6+7</f><v></v>', b'<f>6+7</f><v>13</v>')
+                                sheet = ET.fromstring(content)
+                                bounds = sheet.find('{*}dimension')
+                                if dimension:
+                                    bounds.set('ref', 'A1:A1')
+                                else:
+                                    sheet.remove(bounds)
+                                sheet.find(".//{*}c[@r='B3']/{*}v").text = '13'
+                                content = ET.tostring(sheet, encoding='utf-8')
                             if name == 'xl/worksheets/sheet2.xml':
                                 # The other sheet's header is usable, but decoding its cells fails.
                                 content = content.replace(b'<v>789</v>', b'<v>broken-number</v>')

@@ -571,7 +571,23 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             if getattr(self, 'command', None) != 'HEAD':
                 self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            if code >= 400 and getattr(self, 'command', None) == 'POST' and self.close_connection:
+                # Finish the response before closing with unread upload bytes. Windows
+                # can otherwise reset the socket before the client receives the error.
+                self.wfile.flush()
+                try:
+                    self.connection.shutdown(socket.SHUT_WR)
+                    deadline = time.monotonic() + 0.2
+                    remaining = 64 * 1024
+                    while remaining and (wait := deadline - time.monotonic()) > 0:
+                        self.connection.settimeout(wait)
+                        chunk = self.rfile.read1(min(remaining, 8192))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                except OSError:
+                    pass  # Response sent; the peer closed or the drain deadline elapsed.
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
             # The client is gone; do not send another response on this socket.
             self.close_connection = True
 
