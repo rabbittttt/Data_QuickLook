@@ -1,4 +1,8 @@
 'use strict';
+if (window.frameElement?.matches('#frame-container > iframe[data-app="quicklook"]')) {
+  document.documentElement.classList.add('planhub-embedded');
+}
+
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{if(v===null||v===undefined||v==='')return null;const s=String(v).trim().replace(/[,，]/g,'');if(!s)return null;const n=Number(s.replace(/%$/,''));return Number.isFinite(n)?n/(s.endsWith('%')?100:1):null;};

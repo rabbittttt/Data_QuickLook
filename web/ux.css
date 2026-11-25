@@ -7,6 +7,8 @@
 }
 body{font-size:14px;line-height:1.55}
 img.brandmark{width:28px;height:28px;display:block;flex-shrink:0;background:transparent;border-radius:0;object-fit:contain}
+.planhub-embedded .workspace-header .brand > .brandmark,
+.planhub-embedded .compact-toolbar .brand > .brandmark { display: none; }
 main,.app,.pagehead>div,.sectionhead>div{min-width:0}
 main,main :is(button,input,select,summary,[tabindex]){scroll-margin-top:16px;scroll-margin-bottom:16px}
 h1{font-size:21px;line-height:1.35;letter-spacing:-.25px}
