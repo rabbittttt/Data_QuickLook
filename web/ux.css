@@ -134,7 +134,7 @@ button.link{min-height:32px;padding:4px 6px}
 .catalog-update button{flex-shrink:0}
 .skip-link{position:fixed;top:8px;left:12px;z-index:100;padding:10px 14px;border-radius:8px;background:#fff;color:var(--primary);transform:translateY(-160%)}
 .skip-link:focus{transform:translateY(0)}
-#nav button[aria-current=page]{background:var(--soft);color:var(--primary);font-weight:650}
+#nav button[aria-current=page]{background:var(--soft);color:var(--primary);}
 
 /* Keep application navigation and data actions in a shared top toolbar. */
 .workspace-header{
@@ -420,7 +420,7 @@ table,
   background: transparent;
   color: var(--muted);
   font-size: var(--type-body);
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1.4;
   text-decoration: none;
   white-space: nowrap;
@@ -428,7 +428,7 @@ table,
   transition: color 160ms, background-color 160ms;
 }
 #nav button:not(:disabled):hover { background: #f3f4f6; color: var(--ink); }
-#nav button[aria-current=page]:not(:disabled) { background: var(--soft); color: #2049d4; font-weight: 600; }
+#nav button[aria-current=page]:not(:disabled) { background: var(--soft); color: #2049d4; }
 #nav button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 #nav button svg { width: 18px; height: 18px; flex: 0 0 18px; color: inherit; opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
