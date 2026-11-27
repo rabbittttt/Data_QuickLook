@@ -31,7 +31,7 @@ assert.match(css,/\.studio-builder>summary[^}]*justify-content:flex-start/,'disc
 
 const mobile=css.slice(css.indexOf('@media(max-width:760px)'));
 assert.match(css,/\.workspace-header\{[^}]*display:grid[^}]*grid-template-areas:"brand search actions tools" "nav nav nav nav"/,'desktop navigation occupies a top toolbar');
-assert.match(css,/#nav\{[^}]*display:flex[^}]*flex-wrap:wrap/,'the four destinations form horizontal tabs');
+assert.match(css,/#nav \{[^}]*flex-wrap: nowrap[^}]*overflow-x: auto[^}]*scrollbar-width: none/,'tabs stay on one scrollable row');
 assert.match(css,/\.app\{margin-left:0\}/,'content has no child sidebar inset');
 assert.match(css,/main\{max-width:none\}/,'the plotting area uses the available width');
 assert.match(mobile,/\.workspace-header\{[^}]*visibility:hidden[^}]*transform:translateY\(-100%\)/,'the closed mobile panel is hidden above the viewport');

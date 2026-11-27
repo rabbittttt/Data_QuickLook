@@ -406,31 +406,47 @@ table,
 .studio-settings-heading small,
 .tag { font-size: var(--type-note); }
 
-#nav { gap: 6px; }
-
+#nav {
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 2px;
+  min-width: 0; height: var(--navigation-height); margin: 0; padding: 0 32px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  background: var(--card); border-bottom: 1px solid var(--line);
+}
+#nav::-webkit-scrollbar { display: none; }
 #nav button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 6px 12px;
+  flex: 0 0 auto;
+  gap: 7px;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 16px;
   border: 0;
-  border-radius: 10px;
-  background: transparent;
+  border-bottom: 2.5px solid transparent;
+  border-radius: 0;
   color: var(--muted);
-  font-size: var(--type-body);
+  background: transparent;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.4;
-  text-decoration: none;
   white-space: nowrap;
+  text-decoration: none;
   box-shadow: none;
-  transition: color 160ms, background-color 160ms;
+  cursor: pointer;
+  transition: color .16s ease, border-color .16s ease, background-color .16s ease;
 }
-#nav button:not(:disabled):hover { background: #f3f4f6; color: var(--ink); }
-#nav button[aria-current=page]:not(:disabled) { background: var(--soft); color: #2049d4; }
-#nav button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-#nav button svg { width: 18px; height: 18px; flex: 0 0 18px; color: inherit; opacity: 1; }
+#nav button:not(:disabled):hover { background: var(--soft); color: #2049d4; }
+#nav button[aria-current=page]:not(:disabled) {
+  background: var(--soft);
+  color: #2049d4;
+  border-bottom-color: var(--primary);
+  font-weight: 700;
+}
+#nav button:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
+#nav button svg { width: 18px; height: 18px; flex: 0 0 18px; color: inherit; opacity: .8; }
+#nav button[aria-current=page] svg { opacity: 1; }
+#nav button:active { translate: none; }
 @media (prefers-reduced-motion: reduce) {
   #nav button { transition: none; }
 }
@@ -441,7 +457,7 @@ table,
 /* Shared vertical rhythm of the embedded dashboards. */
 :root {
   --toolbar-height: 64px;
-  --navigation-height: 56px;
+  --navigation-height: 57px;
   --dashboard-gap: 16px;
 }
 @media (max-width: 640px) {
@@ -460,7 +476,7 @@ main { padding-top: var(--dashboard-gap); }
   .sidebar-data-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
   .sidebar-data-actions > * { flex: none; }
   .sidebar-data-actions .top-actions { flex-wrap: nowrap; }
-  #nav { height: var(--navigation-height); align-items: center; flex-wrap: nowrap; padding-block: 0; overflow-x: auto; }
+  #nav { margin-inline: -22px; }
 }
 @media (max-width: 760px) {
   .compact-header {
@@ -475,12 +491,7 @@ main { padding-top: var(--dashboard-gap); }
   }
   .compact-toolbar .brand { display: flex; align-items: center; gap: 8px; padding: 0; font-size: var(--type-title); color: var(--ink); }
   .compact-toolbar .sidebar-toggle { margin: 0; }
-  #compactNav { height: var(--navigation-height); }
-  #compactNav #nav {
-    display: flex; flex-wrap: nowrap; align-items: center;
-    margin: 0; padding: 0; height: 100%; min-width: 0; overflow-x: auto; scrollbar-width: thin;
-  }
-  #compactNav #nav button { flex: none; }
+  #compactNav { margin-inline: -12px; }
 }
 
 .workspace-header .brand, .compact-toolbar .brand { gap: 8px; font-weight: 700; line-height: 1.15; letter-spacing: normal; }
