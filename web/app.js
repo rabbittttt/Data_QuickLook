@@ -431,15 +431,19 @@ window.addEventListener('DOMContentLoaded',async()=>{
     persistBasket();
     const page=location.hash.slice(1);
     go(['home','raw','explore','compare','saved','health'].includes(page)?page:'home');
-    setInterval(async()=>{
-      if(pollBusy)return;
+    const frame=window.frameElement;
+    async function checkVisibleCatalog(){
+      if(pollBusy||document.hidden||frame?.hidden)return;
       pollBusy=true;
       try{
         if(await refreshCatalog())go(state.page,{background:true});
       }catch{
         $('#syncStatus').textContent='连接中断，请检查数据速查服务';
       }finally{pollBusy=false;}
-    },AUTO_REFRESH_INTERVAL);
+    }
+    if(frame)new MutationObserver(checkVisibleCatalog).observe(frame,{attributes:true,attributeFilter:['hidden']});
+    document.addEventListener('visibilitychange',checkVisibleCatalog);
+    setInterval(checkVisibleCatalog,AUTO_REFRESH_INTERVAL);
   }
   await loadCatalog();
 });

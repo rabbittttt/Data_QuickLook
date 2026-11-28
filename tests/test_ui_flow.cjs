@@ -18,17 +18,26 @@ function catalogContext(){
 }
 
 test('idle catalog checks run every ten minutes with an initial load',async()=>{
-  const $=nodes(),intervals=[];let ready,refreshes=0;
-  const c=vm.createContext({$,state:{basket:[],page:'home'},location:{hash:''},localStorage:{getItem:()=>null},window:{addEventListener:(_event,callback)=>{ready=callback;}},refreshCatalog:async()=>{refreshes++;return true;},persistBasket:()=>{},go:()=>{},pollBusy:false,setInterval:(callback,delay)=>intervals.push({callback,delay}),empty:()=>''});
+  const $=nodes(),intervals=[],frame={hidden:false};let ready,refreshes=0,onFrame,onVisibility;
+  const document={hidden:false,addEventListener:(name,callback)=>{assert.equal(name,'visibilitychange');onVisibility=callback;}};
+  class MutationObserver{
+    constructor(callback){onFrame=callback;}
+    observe(target,options){assert.equal(target,frame);assert.deepEqual(plain(options.attributeFilter),['hidden']);}
+  }
+  const c=vm.createContext({$,document,MutationObserver,state:{basket:[],page:'home'},location:{hash:''},localStorage:{getItem:()=>null},window:{frameElement:frame,addEventListener:(_event,callback)=>{ready=callback;}},refreshCatalog:async()=>{refreshes++;return true;},persistBasket:()=>{},go:()=>{},pollBusy:false,setInterval:(callback,delay)=>intervals.push({callback,delay}),empty:()=>''});
   vm.runInContext(app.match(/^const AUTO_REFRESH_INTERVAL=.*$/m)[0]+'\n'+app.slice(app.indexOf("window.addEventListener('DOMContentLoaded',")),c);
   await ready();assert.equal(refreshes,1);assert.equal(intervals.length,1);assert.equal(intervals[0].delay,600000);
   await intervals[0].callback();assert.equal(refreshes,2);assert.equal(c.pollBusy,false);
+  frame.hidden=true;await onFrame();await intervals[0].callback();assert.equal(refreshes,2);
+  frame.hidden=false;await onFrame();assert.equal(refreshes,3);
+  document.hidden=true;await onVisibility();await intervals[0].callback();assert.equal(refreshes,3);
+  document.hidden=false;await Promise.all([onVisibility(),intervals[0].callback()]);assert.equal(refreshes,4);
 });
 
 test('a plain-text portal 502 can be retried without leaving the embedded page',async()=>{
   const $=nodes(),intervals=[],routes=[],requests=[];let ready;
   const c=vm.createContext({
-    $,state:{basket:[],page:'home'},location:{hash:'#explore'},localStorage:{getItem:()=>null},
+    $,document:{addEventListener(){}},state:{basket:[],page:'home'},location:{hash:'#explore'},localStorage:{getItem:()=>null},
     window:{addEventListener:(_event,callback)=>{ready=callback;}},persistBasket:()=>{},
     refreshCatalog:()=>c.api('catalog'),go:page=>routes.push(page),pollBusy:false,
     setInterval:(callback,delay)=>intervals.push({callback,delay}),esc:String,
